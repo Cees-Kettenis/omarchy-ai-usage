@@ -3,6 +3,7 @@
   "id": "codex-status",
   "name": "Codex Status",
   "version": "1.0.0",
+  "author": "Cees Kettenis",
   "license": "MIT",
   "description": "Cached usage and rate limits for every local Codex profile.",
   "kinds": [

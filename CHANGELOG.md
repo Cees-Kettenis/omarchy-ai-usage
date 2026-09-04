@@ -18,8 +18,8 @@
 - Added privacy mode, enabled by default, which skips account identity requests
   and keeps email and subscription details out of the cache.
 - Added a command-line view for fetching or printing the cached status.
-- Added a marketplace preview and focused documentation for setup, behavior,
-  privacy, development, and releases.
+- Added marketplace metadata, a preview, and focused documentation for setup,
+  behavior, privacy, development, and releases.
 - Added tag-driven GitHub releases with installable archives and checksums.
 - Required release commits to be present on the default branch and added the
   marketplace verification link to each release job summary.
