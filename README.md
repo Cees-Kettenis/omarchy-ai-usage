@@ -1,18 +1,19 @@
-# Codex Status
+# AI Usage
 
-See the Codex usage left across your local profiles from the Omarchy bar.
+See the AI usage left across your local profiles from the Omarchy bar.
 
 <p align="center">
-  <img src="preview.png" width="440" alt="Codex Status summary showing usage for four profiles">
+  <img src="preview.png" width="440" alt="AI Usage summary showing usage for four profiles">
 </p>
 
-Codex Status checks each profile through the installed Codex CLI and keeps the
+Version 1.0 supports Codex profiles. Claude, Kimi, and Grok are not supported
+yet. AI Usage checks each profile through the installed Codex CLI and keeps the
 latest display data in a local cache. The popup opens from that cache, so it
 does not wait for a network request.
 
 ## Install
 
-Codex Status is built for Omarchy Quattro and its shell plugin system. It also
+AI Usage is built for Omarchy Quattro and its shell plugin system. It also
 needs Python 3, the Codex CLI, and at least one signed-in Codex profile. The
 folder picker uses GTK 4 and PyGObject.
 
@@ -21,7 +22,7 @@ Once the plugin is listed, its page on
 command. To install it directly from this repository, run:
 
 ```bash
-omarchy plugin add https://github.com/Cees-Kettenis/omarchy-codex-status.git --enable
+omarchy plugin add https://github.com/Cees-Kettenis/omarchy-ai-usage.git --enable
 ```
 
 Omarchy shows the source URL, asks for confirmation, validates the manifest,
@@ -31,8 +32,8 @@ and does not need `sudo`.
 ## Update or remove
 
 ```bash
-omarchy plugin update codex-status
-omarchy plugin remove codex-status
+omarchy plugin update ai-usage
+omarchy plugin remove ai-usage
 ```
 
 ## What you get

@@ -4,8 +4,8 @@
 
 ### Added
 
-- Added an Omarchy bar widget for viewing cached Codex usage across multiple
-  local profiles.
+- Added AI Usage, an Omarchy bar widget for viewing cached Codex usage across
+  multiple local profiles.
 - Added a summary that prefers the 5-hour limit and falls back to the weekly
   limit for profiles without a 5-hour window.
 - Added profile views for all available limits, reset times, credits, and

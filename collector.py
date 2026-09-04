@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh and print the cache used by the Codex Status shell plugin."""
+"""Refresh and print Codex data for the AI Usage shell plugin."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 RPC_TIMEOUT_SECONDS = 12
-PLUGIN_ID = "codex-status"
+PLUGIN_ID = "ai-usage"
 DEFAULT_PROFILE_ROOT = Path.home() / ".codex-profiles"
 SHELL_CONFIG_FILE = Path.home() / ".config" / "omarchy" / "shell.json"
-CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "omarchy" / "codex-status"
+CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "omarchy" / "ai-usage"
 CACHE_FILE = CACHE_ROOT / "status.json"
 LOCK_FILE = CACHE_ROOT / "refresh.lock"
 
@@ -257,8 +257,8 @@ def probe_profile(profile_home: Path, codex_command: str, include_identity: bool
             "initialize",
             {
                 "clientInfo": {
-                    "name": "omarchy_codex_status",
-                    "title": "Omarchy Codex Status",
+                    "name": "omarchy_ai_usage",
+                    "title": "Omarchy AI Usage",
                     "version": "1.0.0",
                 }
             },
@@ -419,7 +419,7 @@ def usage_bar(remaining: int, width: int = 20) -> str:
 def print_payload(payload: dict[str, Any], show_identity: bool = False) -> None:
     fetched_at_ms = int(payload.get("fetchedAtMs") or 0)
     fetched = datetime.fromtimestamp(fetched_at_ms / 1000).astimezone() if fetched_at_ms else None
-    print("\n  CODEX USAGE DASHBOARD")
+    print("\n  AI USAGE DASHBOARD")
     if fetched:
         print(f"  Last fetched {fetched:%A, %d %B %Y  %H:%M:%S}\n")
     else:
@@ -489,7 +489,7 @@ def main() -> int:
             else refresh_cache(profile_root, force=args.force, include_identity=args.show_identity)
         )
     except Exception as exc:
-        print(f"codex-status: refresh failed: {exc}", file=sys.stderr)
+        print(f"ai-usage: refresh failed: {exc}", file=sys.stderr)
         payload = read_cache()
         if not args.print_result:
             return 1

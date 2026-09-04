@@ -1,12 +1,13 @@
-# How Codex Status works
+# How AI Usage works
 
 <p align="center">
   <img src="screenshots/summary.png" width="405" alt="Summary view showing the preferred limit for four Codex profiles">
   <img src="screenshots/details.png" width="405" alt="Profile view showing five-hour and weekly limits without account details">
 </p>
 
-Codex Status has two parts. `collector.py` fetches usage data and writes a
-small cache file. `Panel.qml` reads that file and renders the bar popup.
+Version 1.0 has one provider integration: Codex. `collector.py` fetches its
+usage data and writes a small cache file. `Panel.qml` reads that file and
+renders the bar popup.
 
 ## Fetching usage
 
@@ -30,7 +31,7 @@ copy `auth.json`.
 The collector writes display data to:
 
 ```text
-~/.cache/omarchy/codex-status/status.json
+~/.cache/omarchy/ai-usage/status.json
 ```
 
 `$XDG_CACHE_HOME` replaces `~/.cache` when it is set. The cache directory uses
@@ -50,7 +51,7 @@ finished.
 Open the popup and select the gear button.
 
 <p align="center">
-  <img src="screenshots/settings.png" width="413" alt="Codex Status settings for profiles, privacy, and the sleep schedule">
+  <img src="screenshots/settings.png" width="413" alt="AI Usage settings for profiles, privacy, and the sleep schedule">
 </p>
 
 The settings panel controls:
@@ -85,19 +86,19 @@ fetch immediately.
 Print the cached result without fetching:
 
 ```bash
-~/.config/omarchy/plugins/codex-status/collector.py --cached --print
+~/.config/omarchy/plugins/ai-usage/collector.py --cached --print
 ```
 
 Fetch now using the configured profiles folder:
 
 ```bash
-~/.config/omarchy/plugins/codex-status/collector.py --force --print
+~/.config/omarchy/plugins/ai-usage/collector.py --force --print
 ```
 
 Use another profiles folder for one run:
 
 ```bash
-~/.config/omarchy/plugins/codex-status/collector.py \
+~/.config/omarchy/plugins/ai-usage/collector.py \
   --profiles-root /path/to/profiles \
   --force \
   --print

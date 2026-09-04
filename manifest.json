@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "codex-status",
-  "name": "Codex Status",
+  "id": "ai-usage",
+  "name": "AI Usage",
   "version": "1.0.0",
   "author": "Cees Kettenis",
   "license": "MIT",
-  "description": "Cached usage and rate limits for every local Codex profile.",
+  "description": "Cached AI usage and rate limits, with support for multiple local Codex profiles.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,11 +14,12 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Codex Status",
-    "description": "Show a compact usage summary and detailed limits for every Codex profile.",
+    "displayName": "AI Usage",
+    "description": "Show a compact AI usage summary and detailed limits for every configured profile.",
     "category": "AI",
     "aliases": [
-      "codex-status",
+      "ai-usage",
+      "usage-status",
       "codex-usage"
     ],
     "allowMultiple": false,
@@ -68,7 +69,7 @@
           "On"
         ],
         "defaultValue": "Off",
-        "description": "Pause automatic Codex usage checks during the configured sleep window."
+        "description": "Pause automatic usage checks during the configured sleep window."
       },
       {
         "key": "sleepStart",

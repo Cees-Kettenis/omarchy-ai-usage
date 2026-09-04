@@ -75,8 +75,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          package_name="omarchy-codex-status-${VERSION}"
-          package_dir="${RUNNER_TEMP}/codex-status"
+          package_name="omarchy-ai-usage-${VERSION}"
+          package_dir="${RUNNER_TEMP}/ai-usage"
           output_dir="${RUNNER_TEMP}/release"
 
           mkdir -p "${package_dir}/docs/screenshots" "${output_dir}"
@@ -86,10 +86,10 @@ jobs:
           cp docs/screenshots/*.png "${package_dir}/docs/screenshots/"
 
           tar -C "${RUNNER_TEMP}" -czf "${output_dir}/${package_name}.tar.gz" \
-            codex-status
+            ai-usage
           (
             cd "${RUNNER_TEMP}"
-            zip -qr "${output_dir}/${package_name}.zip" codex-status
+            zip -qr "${output_dir}/${package_name}.zip" ai-usage
           )
           (
             cd "${output_dir}"

@@ -7,7 +7,7 @@ import qs.Ui
 
 Panel {
   id: root
-  moduleName: "codex-status"
+  moduleName: "ai-usage"
   ipcTarget: ""
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -18,7 +18,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string cachePath: (Quickshell.env("XDG_CACHE_HOME") || home + "/.cache")
-    + "/omarchy/codex-status/status.json"
+    + "/omarchy/ai-usage/status.json"
   readonly property string collectorPath: Qt.resolvedUrl("collector.py").toString().replace(/^file:\/\//, "")
   readonly property string folderPickerPath: Qt.resolvedUrl("folder_picker.py").toString().replace(/^file:\/\//, "")
 
@@ -210,7 +210,7 @@ Panel {
       nowMs = Date.now()
       if (selectedTabIndex > accounts.length) selectedTabIndex = accounts.length
     } catch (error) {
-      console.warn("codex-status", "Ignoring invalid cache", error)
+      console.warn("ai-usage", "Ignoring invalid cache", error)
     }
   }
 
@@ -359,7 +359,7 @@ Panel {
 
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: if (text.trim() !== "") console.warn("codex-status folder picker", text.trim())
+      onStreamFinished: if (text.trim() !== "") console.warn("ai-usage folder picker", text.trim())
     }
   }
 
@@ -370,7 +370,7 @@ Panel {
 
     onExited: function(exitCode) {
       cacheFile.reload()
-      if (exitCode !== 0) console.warn("codex-status", "Collector exited with", exitCode)
+      if (exitCode !== 0) console.warn("ai-usage", "Collector exited with", exitCode)
       if (root.refreshQueued) {
         var force = root.refreshQueuedForce
         root.refreshQueued = false
@@ -381,7 +381,7 @@ Panel {
 
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: if (text.trim() !== "") console.warn("codex-status", text.trim())
+      onStreamFinished: if (text.trim() !== "") console.warn("ai-usage", text.trim())
     }
   }
 
@@ -396,8 +396,8 @@ Panel {
     text: "󱚣"
     active: root.alarming
     tooltipText: root.sleepModeActive
-      ? "Codex usage · Sleep mode · not fetching"
-      : "Codex usage · " + root.lastFetchText()
+      ? "AI usage · Sleep mode · not fetching"
+      : "AI usage · " + root.lastFetchText()
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton || buttonCode === Qt.MiddleButton) root.refreshNow(true)
       else root.toggle()
@@ -464,7 +464,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: root.summaryView
-                  ? "Codex summary"
+                  ? "AI usage"
                   : String(root.account.label || root.account.id || "Codex")
                 color: root.foreground
                 font.family: root.fontFamily
