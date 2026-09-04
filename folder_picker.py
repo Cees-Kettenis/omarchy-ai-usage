@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Open a GTK folder chooser outside the Quickshell process."""
 
 from __future__ import annotations

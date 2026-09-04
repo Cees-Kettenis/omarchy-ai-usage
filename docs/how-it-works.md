@@ -6,13 +6,15 @@
 </p>
 
 Version 1.0 has one provider integration: Codex. `collector.py` fetches its
-usage data and writes a small cache file. `Panel.qml` reads that file and
-renders the bar popup.
+usage data and writes a small cache file. The panel asks the collector for a
+validated JSON snapshot and renders the bar popup.
 
 ## Fetching usage
 
 The collector scans one profiles folder. Each immediate subfolder is treated
-as a separate `CODEX_HOME` and must contain an `auth.json` file.
+as a separate `CODEX_HOME` and must contain a private `auth.json` file owned by
+the current user. Symlinked profile folders and credential files are ignored
+or rejected.
 
 ```text
 ~/.codex-profiles/
@@ -26,7 +28,9 @@ as a separate `CODEX_HOME` and must contain an `auth.json` file.
 
 For each profile, the collector starts the installed `codex app-server` with
 that folder as `CODEX_HOME` and requests its rate limits. It does not parse or
-copy `auth.json`.
+copy `auth.json`. Codex is selected from fixed install locations, checked for
+safe ownership and permissions, and run with a controlled executable search
+path.
 
 The collector writes display data to:
 
@@ -36,6 +40,11 @@ The collector writes display data to:
 
 `$XDG_CACHE_HOME` replaces `~/.cache` when it is set. The cache directory uses
 mode `0700`, and the status file uses mode `0600`.
+
+Cache and lock files are opened without following symlinks. Reads, writes,
+profile scans, app-server replies, and display fields have size limits. Each
+request and refresh also has a deadline. When a refresh ends or the widget is
+destroyed, the collector stops the Codex process group it started.
 
 ## Summary and profile views
 
@@ -66,9 +75,9 @@ and manual refresh still works.
 
 ## Refresh behavior
 
-The widget refreshes every 15 minutes by default. Opening the popup reads the
-cache immediately. Fetching runs separately and updates the view when it
-finishes.
+The widget refreshes every 15 minutes by default. On startup it asks the
+collector for the cached snapshot. Fetching runs separately and updates the
+view when it finishes.
 
 Use the refresh button, right-click the bar icon, or press `r` or Enter to
 fetch immediately.

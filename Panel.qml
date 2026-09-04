@@ -17,8 +17,6 @@ Panel {
   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string home: Quickshell.env("HOME") || ""
-  readonly property string cachePath: (Quickshell.env("XDG_CACHE_HOME") || home + "/.cache")
-    + "/omarchy/ai-usage/status.json"
   readonly property string collectorPath: Qt.resolvedUrl("collector.py").toString().replace(/^file:\/\//, "")
   readonly property string folderPickerPath: Qt.resolvedUrl("folder_picker.py").toString().replace(/^file:\/\//, "")
 
@@ -58,6 +56,30 @@ Panel {
   function alpha(color, opacity) { return Qt.rgba(color.r, color.g, color.b, opacity) }
   function clamp(value, minimum, maximum) { return Math.max(minimum, Math.min(maximum, value)) }
 
+  function cleanText(value, fallback) {
+    var text = String(value === undefined || value === null ? (fallback || "") : value)
+      .replace(/[\x00-\x1f\x7f]/g, "").substring(0, 256)
+    return text || String(fallback || "").substring(0, 256)
+  }
+
+  function percent(value) {
+    var number = Number(value)
+    return isFinite(number) ? clamp(Math.round(number), 0, 100) : 0
+  }
+
+  function epoch(value) {
+    var number = Number(value)
+    return isFinite(number) && number >= 0 ? Math.floor(number) : null
+  }
+
+  function collectorCommand(arguments, duration) {
+    var command = [
+      "/usr/bin/timeout", "--signal=TERM", "--kill-after=2s", duration,
+      "/usr/bin/python3", "-I", collectorPath
+    ]
+    return command.concat(arguments)
+  }
+
   function switchEnabled(value) {
     if (value === true) return true
     var text = String(value || "").trim().toLowerCase()
@@ -86,7 +108,8 @@ Panel {
   function browseProfilesRoot() {
     if (folderPickerProcess.running) return
     folderPickerProcess.command = [
-      "python3",
+      "/usr/bin/python3",
+      "-I",
       folderPickerPath,
       expandedProfilesPath(profilesRootField.text || profilesRoot)
     ]
@@ -151,6 +174,10 @@ Panel {
       settingsError = "Choose a folder containing your Codex profile folders"
       return
     }
+    if (profileRoot.length > 4096) {
+      settingsError = "Profiles folder path is too long"
+      return
+    }
     if (profileRoot.charAt(0) !== "/" && profileRoot !== "~" && !profileRoot.startsWith("~/")) {
       settingsError = "Use an absolute path or a path starting with ~/"
       return
@@ -204,9 +231,62 @@ Panel {
 
   function parseCache(content) {
     try {
-      var parsed = JSON.parse(String(content || ""))
+      var source = String(content || "")
+      if (source.length === 0 || source.length > 524288) return
+      var parsed = JSON.parse(source)
       if (!parsed || parsed.schemaVersion !== 1 || !Array.isArray(parsed.accounts)) return
-      cache = parsed
+      var cleanAccounts = []
+      for (var accountIndex = 0; accountIndex < Math.min(parsed.accounts.length, 32); accountIndex++) {
+        var account = parsed.accounts[accountIndex]
+        if (!account || typeof account !== "object") continue
+        var cleanLimits = []
+        var limits = Array.isArray(account.limits) ? account.limits : []
+        for (var limitIndex = 0; limitIndex < Math.min(limits.length, 8); limitIndex++) {
+          var limit = limits[limitIndex]
+          if (!limit || typeof limit !== "object") continue
+          cleanLimits.push({
+            name: cleanText(limit.name, "Usage"),
+            remainingPercent: percent(limit.remainingPercent),
+            usedPercent: percent(limit.usedPercent),
+            resetsAt: epoch(limit.resetsAt)
+          })
+        }
+        var cleanResets = []
+        var resets = Array.isArray(account.resets) ? account.resets : []
+        for (var resetIndex = 0; resetIndex < Math.min(resets.length, 16); resetIndex++) {
+          var reset = resets[resetIndex]
+          if (!reset || typeof reset !== "object") continue
+          cleanResets.push({ title: cleanText(reset.title, "Rate-limit reset"), expiresAt: epoch(reset.expiresAt) })
+        }
+        var credits = null
+        if (account.credits && typeof account.credits === "object") {
+          credits = {
+            remainingPercent: percent(account.credits.remainingPercent),
+            used: account.credits.used === null || account.credits.used === undefined
+              ? null : cleanText(account.credits.used, ""),
+            limit: account.credits.limit === null || account.credits.limit === undefined
+              ? null : cleanText(account.credits.limit, ""),
+            resetsAt: epoch(account.credits.resetsAt)
+          }
+        }
+        cleanAccounts.push({
+          id: cleanText(account.id, "Codex"),
+          label: cleanText(account.label || account.id, "Codex"),
+          ready: account.ready === true,
+          error: cleanText(account.error, ""),
+          limits: cleanLimits,
+          credits: credits,
+          resets: cleanResets,
+          email: cleanText(account.email, ""),
+          plan: cleanText(account.plan, "")
+        })
+      }
+      cache = {
+        schemaVersion: 1,
+        fetchedAtMs: epoch(parsed.fetchedAtMs) || 0,
+        error: cleanText(parsed.error, ""),
+        accounts: cleanAccounts
+      }
       nowMs = Date.now()
       if (selectedTabIndex > accounts.length) selectedTabIndex = accounts.length
     } catch (error) {
@@ -225,10 +305,10 @@ Panel {
     }
     refreshQueued = false
     refreshQueuedForce = false
-    var command = ["python3", collectorPath, "--profiles-root", profilesRoot]
-    if (!privacyModeEnabled) command.push("--show-identity")
-    if (requestedForce) command.push("--force")
-    refreshProcess.command = command
+    var arguments = ["--profiles-root", profilesRoot, "--json"]
+    if (!privacyModeEnabled) arguments.push("--show-identity")
+    if (requestedForce) arguments.push("--force")
+    refreshProcess.command = collectorCommand(arguments, "50s")
     refreshProcess.running = true
   }
 
@@ -295,7 +375,13 @@ Panel {
     return resets.length + " reset" + (resets.length === 1 ? "" : "s") + " available"
   }
 
-  Component.onCompleted: cacheFile.reload()
+  Component.onCompleted: cacheReadProcess.running = true
+
+  Component.onDestruction: {
+    if (cacheReadProcess.running) cacheReadProcess.running = false
+    if (refreshProcess.running) refreshProcess.running = false
+    if (folderPickerProcess.running) folderPickerProcess.running = false
+  }
 
   onOpenedChanged: {
     if (opened) {
@@ -333,13 +419,25 @@ Panel {
     }
   }
 
-  FileView {
-    id: cacheFile
-    path: root.cachePath
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.parseCache(text())
+  Process {
+    id: cacheReadProcess
+    running: false
+    command: root.collectorCommand(
+      root.privacyModeEnabled
+        ? ["--cached", "--json"]
+        : ["--cached", "--json", "--show-identity"],
+      "5s"
+    )
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.parseCache(text)
+    }
+
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") console.warn("ai-usage cache", text.trim())
+    }
   }
 
   Process {
@@ -366,10 +464,8 @@ Panel {
   Process {
     id: refreshProcess
     running: false
-    command: ["python3", root.collectorPath]
 
     onExited: function(exitCode) {
-      cacheFile.reload()
       if (exitCode !== 0) console.warn("ai-usage", "Collector exited with", exitCode)
       if (root.refreshQueued) {
         var force = root.refreshQueuedForce
@@ -377,6 +473,11 @@ Panel {
         root.refreshQueuedForce = false
         Qt.callLater(function() { root.refreshNow(force) })
       }
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.parseCache(text)
     }
 
     stderr: StdioCollector {

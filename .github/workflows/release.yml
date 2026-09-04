@@ -67,6 +67,11 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
 
+      - name: Test collector
+        run: |
+          /usr/bin/python3 -m py_compile collector.py folder_picker.py
+          /usr/bin/python3 -m unittest discover -s tests -v
+
       - name: Build plugin archives
         id: package
         shell: bash

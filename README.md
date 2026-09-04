@@ -27,7 +27,7 @@ omarchy plugin add https://github.com/Cees-Kettenis/omarchy-ai-usage.git --enabl
 
 Omarchy shows the source URL, asks for confirmation, validates the manifest,
 and lets you choose the bar position. This plugin has no separate installer
-and does not need `sudo`.
+and does not request elevated privileges.
 
 ## Update or remove
 

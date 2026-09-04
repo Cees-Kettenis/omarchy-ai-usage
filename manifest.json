@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ai-usage",
   "name": "AI Usage",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Cees Kettenis",
   "license": "MIT",
   "description": "Cached AI usage and rate limits, with support for multiple local Codex profiles.",

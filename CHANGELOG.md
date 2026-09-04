@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.1 - 2026-09-04
+
+### Fixed
+
+- Protected cache, lock, profile, and credential paths with no-follow,
+  ownership, type, permission, and size checks.
+- Replaced inherited `PATH` lookup with fixed, verified Codex install
+  locations and an absolute Python interpreter.
+- Added per-request, per-profile, and whole-refresh deadlines with process
+  group cleanup for Codex app-server children.
+- Bounded profile discovery, app-server output, cached JSON, display strings,
+  and rendered account data.
+- Moved cache reads out of QML and through the collector's validated JSON
+  interface.
+- Added focused tests for path, permission, process, RPC, and payload safety.
+
 ## 1.0.0 - 2026-09-04
 
 ### Added
