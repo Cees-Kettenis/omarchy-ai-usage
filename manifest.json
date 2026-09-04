@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-status",
+  "name": "Codex Status",
+  "version": "1.0.0",
+  "license": "MIT",
+  "description": "Cached usage and rate limits for every local Codex profile.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Codex Status",
+    "description": "Show a compact usage summary and detailed limits for every Codex profile.",
+    "category": "AI",
+    "aliases": [
+      "codex-status",
+      "codex-usage"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 900,
+      "profilesRoot": "~/.codex-profiles",
+      "privacyMode": "On",
+      "sleepMode": "Off",
+      "sleepStart": "17:00",
+      "sleepEnd": "07:30"
+    },
+    "schema": [
+      {
+        "key": "profilesRoot",
+        "type": "string",
+        "label": "Codex profiles folder",
+        "defaultValue": "~/.codex-profiles",
+        "description": "Folder whose immediate subfolders contain Codex auth.json files."
+      },
+      {
+        "key": "privacyMode",
+        "type": "enum",
+        "label": "Privacy mode",
+        "options": [
+          "Off",
+          "On"
+        ],
+        "defaultValue": "On",
+        "description": "Hide account email and subscription details in the popup."
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 900
+      },
+      {
+        "key": "sleepMode",
+        "type": "enum",
+        "label": "Sleep mode",
+        "options": [
+          "Off",
+          "On"
+        ],
+        "defaultValue": "Off",
+        "description": "Pause automatic Codex usage checks during the configured sleep window."
+      },
+      {
+        "key": "sleepStart",
+        "type": "string",
+        "label": "Sleep starts",
+        "defaultValue": "17:00",
+        "description": "Local time in 24-hour HH:MM format."
+      },
+      {
+        "key": "sleepEnd",
+        "type": "string",
+        "label": "Sleep ends",
+        "defaultValue": "07:30",
+        "description": "Local time in 24-hour HH:MM format."
+      }
+    ]
+  }
+}
