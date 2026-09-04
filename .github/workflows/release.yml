@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  github-release:
+    name: GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag and extract release notes
+        id: release
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must use the form vMAJOR.MINOR.PATCH: ${tag}" >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin \
+            "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+
+          if ! git merge-base --is-ancestor \
+            "${GITHUB_SHA}" "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "Release commit ${GITHUB_SHA} is not on ${DEFAULT_BRANCH}" >&2
+            echo "The marketplace only refreshes the repository's default branch." >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          plugin_version="$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')"
+
+          if [[ "${plugin_version}" != "${version}" ]]; then
+            echo "Tag ${tag} does not match manifest.json version ${plugin_version}" >&2
+            exit 1
+          fi
+
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+
+          awk -v heading="## ${version} - " '
+            index($0, heading) == 1 { found = 1 }
+            found && /^## / && index($0, heading) != 1 { exit }
+            found { print }
+            END { if (!found) exit 2 }
+          ' CHANGELOG.md > "${notes_file}"
+
+          if ! grep -q '[^[:space:]]' "${notes_file}"; then
+            echo "CHANGELOG.md has no release notes for ${version}" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build plugin archives
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          package_name="omarchy-codex-status-${VERSION}"
+          package_dir="${RUNNER_TEMP}/codex-status"
+          output_dir="${RUNNER_TEMP}/release"
+
+          mkdir -p "${package_dir}/docs/screenshots" "${output_dir}"
+          cp Panel.qml collector.py folder_picker.py manifest.json preview.png \
+            README.md CHANGELOG.md LICENSE SECURITY.md "${package_dir}/"
+          cp docs/*.md "${package_dir}/docs/"
+          cp docs/screenshots/*.png "${package_dir}/docs/screenshots/"
+
+          tar -C "${RUNNER_TEMP}" -czf "${output_dir}/${package_name}.tar.gz" \
+            codex-status
+          (
+            cd "${RUNNER_TEMP}"
+            zip -qr "${output_dir}/${package_name}.zip" codex-status
+          )
+          (
+            cd "${output_dir}"
+            sha256sum "${package_name}.tar.gz" "${package_name}.zip" > SHA256SUMS
+          )
+
+          echo "output_dir=${output_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT_DIR: ${{ steps.package.outputs.output_dir }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "${OUTPUT_DIR}"/* \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file "${{ steps.release.outputs.notes_file }}"
+
+      - name: Add marketplace update instructions
+        env:
+          MARKETPLACE_UPDATE_URL: https://github.com/omacom/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml
+        run: |
+          {
+            echo "## Omarchy Plugins"
+            echo
+            echo "The marketplace refreshes listed repositories from their default branch daily."
+            echo
+            echo "- Release commit: \`${GITHUB_SHA}\`"
+            echo "- [Verify and publish this commit](${MARKETPLACE_UPDATE_URL})"
+            echo
+            echo "Choose **Verify and publish a newer upstream commit** and enter the full commit SHA above."
+          } >> "${GITHUB_STEP_SUMMARY}"

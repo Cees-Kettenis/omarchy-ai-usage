@@ -1,50 +1,56 @@
 # Codex Status
 
-A compact Omarchy bar panel for a folder of Codex profiles. It scans
-`~/.codex-profiles/` by default. Each immediate subfolder is treated as a separate
-`CODEX_HOME` and must contain `auth.json`.
+See the Codex usage left across your local profiles from the Omarchy bar.
 
-The collector writes display-only data to
-`~/.cache/omarchy/codex-status/status.json`. The panel reads that cache on
-open, so it never waits for the Codex app server before showing the previous
-result. It refreshes in the background every 15 minutes by default.
+<p align="center">
+  <img src="preview.png" width="440" alt="Codex Status summary showing usage for four profiles">
+</p>
 
-Sleep mode can pause automatic checks during a configurable local-time window.
-It is off by default. The panel keeps showing its last cached result with a
-sleep-mode banner, and manual refreshes still run during that window.
+Codex Status checks each profile through the installed Codex CLI and keeps the
+latest display data in a local cache. The popup opens from that cache, so it
+does not wait for a network request.
 
-Use the gear button in the popup header to choose the profiles folder, enable
-or disable privacy and sleep modes, and change both times. Privacy mode is on by
-default. It skips the account identity request and caches only usage data.
-Turning it off allows the collector to request and display account email and
-subscription details. Saving writes the values back to the widget entry in
-`~/.config/omarchy/shell.json`. Changing the profiles folder immediately
-refreshes the cache from the new location.
+## Install
 
-The folder button beside the profiles path opens an external system folder
-picker. Keeping it outside the shell process prevents a broken desktop portal
-from taking the bar down with it. Choosing a folder fills the field; press Save
-to apply it.
+Codex Status is built for Omarchy Quattro and its shell plugin system. It also
+needs Python 3, the Codex CLI, and at least one signed-in Codex profile. The
+folder picker uses GTK 4 and PyGObject.
 
-The Summary tab shows one bar per profile. It uses the 5-hour limit when that
-profile has one, otherwise it falls back to the weekly limit. Open any profile
-tab to see all of its limits and reset details.
-
-## Controls
-
-- Left-click the bar icon to open or close the panel.
-- Right-click or middle-click the icon to refresh.
-- Use `h` and `l` to move between Summary and profile tabs.
-- Press `r` or Enter to refresh.
-- Press Escape to close.
-
-To print the cached result without a network fetch:
+Once the plugin is listed, its page on
+[Omarchy Plugins](https://plugins.omarchy.org/) will provide the install
+command. To install it directly from this repository, run:
 
 ```bash
-collector.py --cached --print
+omarchy plugin add https://github.com/Cees-Kettenis/omarchy-codex-status.git --enable
 ```
 
-Run `codex-status` in a terminal to force a refresh and print the same data.
-It reads the profiles folder from the widget settings. You can override it for
-one run with `collector.py --profiles-root /path/to/profiles`. Identity remains
-hidden unless you explicitly pass `--show-identity`.
+Omarchy shows the source URL, asks for confirmation, validates the manifest,
+and lets you choose the bar position. This plugin has no separate installer
+and does not need `sudo`.
+
+## Update or remove
+
+```bash
+omarchy plugin update codex-status
+omarchy plugin remove codex-status
+```
+
+## What you get
+
+- One summary for every profile, with the five-hour limit preferred over the
+  weekly limit.
+- A detail view for each profile with all available limits and reset times.
+- Automatic refresh every 15 minutes, plus a manual refresh button.
+- Privacy mode that skips account identity requests and hides account details.
+- A sleep schedule that pauses automatic checks without blocking manual ones.
+
+## Documentation
+
+- [How it works](docs/how-it-works.md) covers profiles, caching, settings,
+  controls, privacy, and command-line use.
+- [Development and releases](docs/development.md) covers local checks, release
+  tags, archives, and the marketplace checklist.
+
+## License
+
+[MIT](LICENSE) © 2026 Cees Kettenis
