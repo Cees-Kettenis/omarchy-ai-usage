@@ -65,6 +65,11 @@ class PanelContractTests(unittest.TestCase):
         self.assertEqual(PANEL.count("width: settingsActions.actionWidth"), 2)
         self.assertEqual(PANEL.count("height: settingsActions.actionHeight"), 2)
 
+    def test_settings_controls_share_a_height(self) -> None:
+        self.assertIn("readonly property real controlHeight", PANEL)
+        self.assertGreaterEqual(PANEL.count("settingsColumn.controlHeight"), 12)
+        self.assertIn('text: claudeBridgeProcess.running ? "Setting up…" : "Set up Claude usage"', PANEL)
+
     def test_redundant_summary_headers_are_removed(self) -> None:
         self.assertNotIn("Preferred limit for every provider profile", PANEL)
         self.assertNotIn('text: "USAGE LEFT"', PANEL)

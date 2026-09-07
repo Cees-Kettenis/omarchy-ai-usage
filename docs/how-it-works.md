@@ -68,7 +68,7 @@ Claude Code does not expose subscription usage through a documented
 non-interactive usage command. Instead, its documented status-line interface
 sends `rate_limits.five_hour`, `rate_limits.seven_day`, and an optional gateway
 `spend_limit` to a local command after an API response. In widget settings,
-select **Enable official Claude usage capture** to add that command to every
+select **Set up Claude usage** to add that command to every
 discovered Claude profile. Existing custom status lines are never replaced.
 Then make a request in each profile so Claude Code emits its current limits.
 

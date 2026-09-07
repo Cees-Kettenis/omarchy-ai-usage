@@ -846,6 +846,7 @@ Panel {
             visible: root.editingSettings
             width: parent.width
             spacing: Style.space(8)
+            readonly property real controlHeight: Style.space(32)
 
               Row {
                 width: parent.width
@@ -877,6 +878,7 @@ Panel {
                 TextField {
                   id: codexProfilesRootField
                   width: Math.max(0, parent.width - browseCodexProfilesButton.width - parent.spacing)
+                  height: settingsColumn.controlHeight
                   placeholderText: "~/.codex-profiles"
                   foreground: root.foreground
                   accent: Color.accent
@@ -890,7 +892,7 @@ Panel {
                 Button {
                   id: browseCodexProfilesButton
                   width: codexProfilesRootField.implicitHeight
-                  height: codexProfilesRootField.implicitHeight
+                  height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
                   bordered: true
@@ -914,6 +916,7 @@ Panel {
                     ? Math.max(0, parent.width - refreshIntervalField.width - parent.spacing)
                     : parent.width
                   label: "Refresh"
+                  rowHeight: settingsColumn.controlHeight
                   value: root.draftRefreshMode
                   options: ["On hover/open", "Scheduled", "Both"]
                   foreground: root.foreground
@@ -927,6 +930,7 @@ Panel {
                   visible: root.draftRefreshMode !== "On hover/open"
                   width: visible ? Style.space(120) : 0
                   label: "Interval (min)"
+                  field.implicitHeight: settingsColumn.controlHeight
                   value: root.draftRefreshIntervalMin
                   from: 1
                   to: 60
@@ -942,6 +946,7 @@ Panel {
                 id: hoverCooldownField
                 visible: root.draftRefreshMode !== "Scheduled"
                 label: "Hover cooldown (seconds)"
+                field.implicitHeight: settingsColumn.controlHeight
                 value: root.draftHoverCooldownSec
                 from: 30
                 to: 3600
@@ -971,6 +976,7 @@ Panel {
                 TextField {
                   id: sleepStartField
                   width: (parent.width - parent.spacing) / 2
+                  height: settingsColumn.controlHeight
                   placeholderText: "From 17:00"
                   maximumLength: 5
                   inputMethodHints: Qt.ImhFormattedNumbersOnly
@@ -985,6 +991,7 @@ Panel {
                 TextField {
                   id: sleepEndField
                   width: (parent.width - parent.spacing) / 2
+                  height: settingsColumn.controlHeight
                   placeholderText: "Until 07:30"
                   maximumLength: 5
                   inputMethodHints: Qt.ImhFormattedNumbersOnly
@@ -1030,6 +1037,7 @@ Panel {
                 id: claudeProfileModeField
                 width: parent.width
                 label: "Account setup"
+                rowHeight: settingsColumn.controlHeight
                 value: root.draftClaudeProfileMode
                 options: ["Single account", "Multiple accounts"]
                 foreground: root.foreground
@@ -1046,6 +1054,7 @@ Panel {
                 TextField {
                   id: claudeProfileRootField
                   width: Math.max(0, parent.width - browseClaudeProfileButton.width - parent.spacing)
+                  height: settingsColumn.controlHeight
                   placeholderText: "~/.claude"
                   foreground: root.foreground
                   accent: Color.accent
@@ -1059,7 +1068,7 @@ Panel {
                 Button {
                   id: browseClaudeProfileButton
                   width: claudeProfileRootField.implicitHeight
-                  height: claudeProfileRootField.implicitHeight
+                  height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
                   bordered: true
@@ -1081,6 +1090,7 @@ Panel {
                 TextField {
                   id: claudeProfilesRootField
                   width: Math.max(0, parent.width - browseClaudeProfilesButton.width - parent.spacing)
+                  height: settingsColumn.controlHeight
                   placeholderText: "~/.claude-profiles"
                   foreground: root.foreground
                   accent: Color.accent
@@ -1094,7 +1104,7 @@ Panel {
                 Button {
                   id: browseClaudeProfilesButton
                   width: claudeProfilesRootField.implicitHeight
-                  height: claudeProfilesRootField.implicitHeight
+                  height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
                   bordered: true
@@ -1110,8 +1120,10 @@ Panel {
 
               Button {
                 width: parent.width
-                text: claudeBridgeProcess.running ? "Enabling…" : "Enable official Claude usage capture"
+                height: settingsColumn.controlHeight
+                text: claudeBridgeProcess.running ? "Setting up…" : "Set up Claude usage"
                 iconText: "󰄬"
+                tooltipText: "One-time setup: install AI Usage as Claude Code's local status-line command."
                 iconSpinning: claudeBridgeProcess.running
                 enabled: !claudeBridgeProcess.running
                 bordered: true

@@ -18,6 +18,8 @@
   with a one-minute default hover cooldown and configurable schedule interval.
 - Grouped all scheduled and sleep controls under OpenAI, separated provider
   settings with dividers, and removed redundant popup headings.
+- Matched the height of single-line settings controls and clarified that
+  Claude usage setup is a one-time status-line installation.
 
 ### Security
 
