@@ -7,7 +7,7 @@
 - Added Claude Code account discovery through the official `claude auth
   status` command, with separate `CLAUDE_CONFIG_DIR` support for multiple
   accounts.
-- Added opt-in Claude usage capture through Claude Code's documented status
+- Added automatic Claude usage capture through Claude Code's documented status
   line for five-hour, seven-day, and gateway spend-limit windows.
 - Added separate Codex and Claude profile locations.
 - Added explicit single-account and multiple-account Claude modes, with single
@@ -18,8 +18,8 @@
   with a one-minute default hover cooldown and configurable schedule interval.
 - Grouped all scheduled and sleep controls under OpenAI, separated provider
   settings with dividers, and removed redundant popup headings.
-- Matched the height of single-line settings controls and clarified that
-  Claude usage setup is a one-time status-line installation.
+- Matched the height of single-line settings controls and made Claude usage
+  setup automatic when an enabled widget discovers a profile.
 - Removed the redundant summary logo and title, moved settings to the left,
   and aligned refresh controls through a shared label and control grid.
 - Moved settings into the profile-switcher row after the final account tab.

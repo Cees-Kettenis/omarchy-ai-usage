@@ -19,7 +19,8 @@ Claude account discovery uses the documented `claude auth status` command.
 Subscription usage is received through Claude Code's documented local status
 line, not an undocumented Anthropic endpoint. The bridge keeps only usage
 percentages, reset timestamps, profile location, and capture time; it discards
-all other session data. Setup is opt-in and refuses to overwrite an existing
+all other session data. The collector installs the bridge automatically when an
+enabled widget discovers a Claude profile, but refuses to overwrite an existing
 custom status line.
 
 Privacy mode is enabled by default. In that mode, the collector does not call

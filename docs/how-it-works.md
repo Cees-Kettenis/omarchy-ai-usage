@@ -67,10 +67,12 @@ account or provider.
 Claude Code does not expose subscription usage through a documented
 non-interactive usage command. Instead, its documented status-line interface
 sends `rate_limits.five_hour`, `rate_limits.seven_day`, and an optional gateway
-`spend_limit` to a local command after an API response. In widget settings,
-select **Set up Claude usage** to add that command to every
-discovered Claude profile. Existing custom status lines are never replaced.
-Then make a request in each profile so Claude Code emits its current limits.
+`spend_limit` to a local command after an API response. AI Usage adds that
+command automatically on the first refresh after the plugin is enabled and
+whenever it discovers a new Claude profile. Omarchy does not run plugin install
+hooks while cloning, so this configuration happens when the enabled widget
+first loads. Existing custom status lines are never replaced. Make a request in
+each profile so Claude Code emits its current limits.
 
 Claude Code supports one configured user status line, so this integration also
 displays a compact `Claude · 5h … · 7d …` line in Claude Code. Anthropic notes
@@ -187,15 +189,6 @@ Use other profile locations for one run:
   --claude-profile-mode single \
   --force \
   --print
-```
-
-Enable Claude capture for every Claude profile under a location:
-
-```bash
-~/.config/omarchy/plugins/ai-usage/collector.py \
-  --claude-profiles-root /path/to/claude-profiles \
-  --claude-profile-mode multiple \
-  --install-claude-bridge
 ```
 
 Identity stays hidden unless you pass `--show-identity` explicitly.

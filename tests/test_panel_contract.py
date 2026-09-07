@@ -76,9 +76,14 @@ class PanelContractTests(unittest.TestCase):
 
     def test_settings_controls_share_a_height(self) -> None:
         self.assertIn("readonly property real controlHeight", PANEL)
-        self.assertGreaterEqual(PANEL.count("settingsColumn.controlHeight"), 12)
+        self.assertGreaterEqual(PANEL.count("settingsColumn.controlHeight"), 11)
         self.assertIn("field.height: settingsColumn.controlHeight", PANEL)
-        self.assertIn('text: claudeBridgeProcess.running ? "Setting up…" : "Set up Claude usage"', PANEL)
+
+    def test_claude_capture_is_automatic(self) -> None:
+        self.assertIn("configures Claude Code's official status line automatically", PANEL)
+        self.assertNotIn("installClaudeBridge", PANEL)
+        self.assertNotIn("claudeBridgeProcess", PANEL)
+        self.assertNotIn("Set up Claude usage", PANEL)
 
     def test_summary_header_is_compact(self) -> None:
         self.assertEqual(PANEL.count('text: "󱚣"'), 1)

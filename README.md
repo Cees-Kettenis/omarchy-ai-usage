@@ -53,8 +53,10 @@ omarchy plugin remove ai-usage
 
 Claude defaults to **Single account** at `~/.claude`. To use more accounts,
 choose **Multiple accounts** and select a parent folder whose immediate
-children are separate `CLAUDE_CONFIG_DIR` homes. Then select **Enable official
-Claude usage capture** and make a request in each Claude Code profile.
+children are separate `CLAUDE_CONFIG_DIR` homes. AI Usage configures official
+Claude usage capture automatically on the first refresh after the plugin is
+enabled and whenever it discovers a new profile. Make a request in each Claude
+Code profile to populate its usage.
 
 Claude Code sends the documented five-hour and seven-day subscription windows
 to the plugin's local status-line command. The command does not use API tokens,
@@ -62,10 +64,10 @@ and the collector uses the documented `claude auth status` command to check
 which account is signed in. AI Usage does not read Claude credential contents
 or call an undocumented Anthropic endpoint.
 
-If a Claude profile already has a custom status line, setup leaves it unchanged
-instead of overwriting it. Enabling capture also displays a compact usage line
-inside Claude Code. See [How it works](docs/how-it-works.md) for manual setup,
-status-line tradeoffs, and multi-account examples.
+If a Claude profile already has a custom status line, automatic setup leaves it
+unchanged instead of overwriting it. Capture also displays a compact usage line
+inside Claude Code. See [How it works](docs/how-it-works.md) for lifecycle
+details, status-line tradeoffs, and multi-account examples.
 
 Profile names default to their folder names. Use the pencil beside a profile
 name to change that profile only. Saved names also appear in the profile

@@ -598,6 +598,49 @@ class PayloadTests(unittest.TestCase):
             self.assertIn("make a Claude Code request", message)
             self.assertEqual(stat.S_IMODE(settings.stat().st_mode), 0o600)
 
+    def test_refresh_installs_claude_bridge_automatically(self) -> None:
+        with temporary_cache(), tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            codex_root = root / "codex"
+            codex_root.mkdir(mode=0o700)
+            claude_profile = root / "claude"
+            claude_profile.mkdir(mode=0o700)
+            credentials = claude_profile / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+
+            with (
+                mock.patch.object(collector, "resolve_codex_command", return_value=None),
+                mock.patch.object(collector, "resolve_claude_command", return_value=None),
+            ):
+                collector.refresh_cache(
+                    codex_root,
+                    force=True,
+                    claude_profile_root=claude_profile,
+                    claude_profile_mode="single",
+                )
+
+            installed = json.loads((claude_profile / "settings.json").read_text(encoding="utf-8"))
+            self.assertEqual(installed["statusLine"]["type"], "command")
+            self.assertIn("claude_statusline.py", installed["statusLine"]["command"])
+
+    def test_automatic_bridge_setup_keeps_custom_statusline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            credentials = profile / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+            settings = profile / "settings.json"
+            settings.write_text(
+                json.dumps({"statusLine": {"type": "command", "command": "my-status"}}),
+                encoding="utf-8",
+            )
+
+            errors = collector.ensure_claude_bridges([profile])
+
+            self.assertIn(str(profile), errors)
+            self.assertEqual(json.loads(settings.read_text())["statusLine"]["command"], "my-status")
+
 
 if __name__ == "__main__":
     unittest.main()

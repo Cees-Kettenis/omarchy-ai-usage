@@ -948,7 +948,7 @@ def _write_claude_settings(profile_home: Path, payload: dict[str, Any]) -> None:
 
 
 def install_claude_bridge(profile_home: Path) -> str:
-    """Opt in one Claude profile to the documented status-line bridge."""
+    """Install the documented status-line bridge for one Claude profile."""
     validate_claude_profile(profile_home)
     bridge = Path(__file__).with_name("claude_statusline.py").resolve(strict=True)
     _read_secure_path(bridge, MAX_CONFIG_BYTES)
@@ -971,11 +971,15 @@ def install_claude_bridge(profile_home: Path) -> str:
     return f"Enabled Claude usage capture for {profile_home}; make a Claude Code request to populate usage"
 
 
-def install_claude_bridges(profile_root: Path, mode: str = "auto") -> list[str]:
-    profiles = discover_claude_profiles(profile_root, mode)
-    if not profiles:
-        raise ValueError(f"No Claude profiles found in {profile_root}")
-    return [install_claude_bridge(profile) for profile in profiles]
+def ensure_claude_bridges(profiles: list[Path]) -> dict[str, str]:
+    """Install capture where possible and report profiles that need user attention."""
+    errors: dict[str, str] = {}
+    for profile in profiles:
+        try:
+            install_claude_bridge(profile)
+        except Exception as exc:
+            errors[str(profile)] = safe_text(f"Claude usage capture could not be configured: {exc}")
+    return errors
 
 
 def read_claude_status(profile_home: Path) -> dict[str, Any] | None:
@@ -1272,6 +1276,7 @@ def refresh_cache(
 
         codex_profiles = discover_profiles(codex_profile_root)
         claude_profiles = discover_claude_profiles(claude_profile_root, claude_profile_mode)
+        claude_bridge_errors = ensure_claude_bridges(claude_profiles)
         codex_command = resolve_codex_command()
         claude_command = resolve_claude_command()
         accounts_by_key: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1317,7 +1322,12 @@ def refresh_cache(
                 executor.shutdown(wait=True, cancel_futures=True)
 
         accounts = [accounts_by_key[("codex", str(profile))] for profile in codex_profiles]
-        accounts.extend(accounts_by_key[("claude", str(profile))] for profile in claude_profiles)
+        for profile in claude_profiles:
+            account = accounts_by_key[("claude", str(profile))]
+            bridge_error = claude_bridge_errors.get(str(profile))
+            if bridge_error and not account.get("limits") and account.get("ready"):
+                account["error"] = bridge_error
+            accounts.append(account)
         global_error = ""
         if not accounts:
             global_error = safe_text(
@@ -1457,11 +1467,6 @@ def main() -> int:
         choices=("single", "multiple"),
         help="treat the Claude location as one config home or a parent of config homes",
     )
-    parser.add_argument(
-        "--install-claude-bridge",
-        action="store_true",
-        help="add the official status-line capture command to Claude profiles without an existing status line",
-    )
     args = parser.parse_args()
     if args.print_result and args.json_result:
         parser.error("--print and --json cannot be used together")
@@ -1471,15 +1476,6 @@ def main() -> int:
     codex_profile_root, claude_profile_root, claude_profile_mode = resolve_profile_configuration(
         codex_value, args.claude_profiles_root, args.claude_profile_mode
     )
-
-    if args.install_claude_bridge:
-        try:
-            for message in install_claude_bridges(claude_profile_root, claude_profile_mode):
-                print(message)
-            return 0
-        except Exception as exc:
-            print(f"ai-usage: Claude bridge setup failed: {exc}", file=sys.stderr)
-            return 1
 
     try:
         payload = (

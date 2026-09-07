@@ -47,7 +47,6 @@ Panel {
   property int draftHoverCooldownSec: 60
   property string folderPickerTarget: "codex"
   property string settingsError: ""
-  property string bridgeMessage: ""
 
   readonly property int refreshIntervalSec: Math.max(30, Number(setting("refreshIntervalSec", 900)))
   readonly property string codexProfilesRoot: String(
@@ -186,22 +185,6 @@ Panel {
     folderPickerProcess.running = true
   }
 
-  function installClaudeBridge() {
-    if (claudeBridgeProcess.running) return
-    bridgeMessage = ""
-    settingsError = ""
-    var multiple = draftClaudeProfileMode === "Multiple accounts"
-    var profileRoot = multiple
-      ? String(claudeProfilesRootField.text || claudeProfilesRoot).trim()
-      : String(claudeProfileRootField.text || claudeProfileRoot).trim()
-    claudeBridgeProcess.command = collectorCommand([
-      "--claude-profiles-root", profileRoot,
-      "--claude-profile-mode", claudeModeArgument(draftClaudeProfileMode),
-      "--install-claude-bridge"
-    ], "15s")
-    claudeBridgeProcess.running = true
-  }
-
   function sleepModeAt(milliseconds) {
     if (!sleepModeEnabled) return false
     var date = new Date(milliseconds)
@@ -237,7 +220,6 @@ Panel {
     draftRefreshIntervalMin = Math.max(1, Math.round(refreshIntervalSec / 60))
     draftHoverCooldownSec = hoverCooldownSec
     settingsError = ""
-    bridgeMessage = ""
     editingSettings = true
     Qt.callLater(function() {
       codexProfilesRootField.text = codexProfilesRoot
@@ -257,7 +239,6 @@ Panel {
   function closeSettings(restoreFocus) {
     editingSettings = false
     settingsError = ""
-    bridgeMessage = ""
     if (restoreFocus !== false)
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -596,7 +577,6 @@ Panel {
     if (cacheReadProcess.running) cacheReadProcess.running = false
     if (refreshProcess.running) refreshProcess.running = false
     if (folderPickerProcess.running) folderPickerProcess.running = false
-    if (claudeBridgeProcess.running) claudeBridgeProcess.running = false
   }
 
   onOpenedChanged: {
@@ -679,25 +659,6 @@ Panel {
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: if (text.trim() !== "") console.warn("ai-usage folder picker", text.trim())
-    }
-  }
-
-  Process {
-    id: claudeBridgeProcess
-    running: false
-
-    onExited: function(exitCode) {
-      if (exitCode === 0) Qt.callLater(function() { root.refreshNow(true) })
-    }
-
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: if (text.trim() !== "") root.bridgeMessage = text.trim()
-    }
-
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: if (text.trim() !== "") root.settingsError = text.trim()
     }
   }
 
@@ -1096,7 +1057,7 @@ Panel {
                 PanelActionButton {
                   id: claudeHelpButton
                   iconText: "?"
-                  tooltipText: "Claude usage comes from Claude Code's official status line after you send a message. OpenAI refresh settings do not request Claude usage."
+                  tooltipText: "AI Usage configures Claude Code's official status line automatically. Claude usage updates after you send a message. OpenAI refresh settings do not request Claude usage."
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   fontSize: Style.font.caption
@@ -1188,32 +1149,6 @@ Panel {
                   enabled: !folderPickerProcess.running
                   onClicked: root.browseProfilesRoot("claude-multiple")
                 }
-              }
-
-              Button {
-                width: parent.width
-                height: settingsColumn.controlHeight
-                text: claudeBridgeProcess.running ? "Setting up…" : "Set up Claude usage"
-                iconText: "󰄬"
-                tooltipText: "One-time setup: install AI Usage as Claude Code's local status-line command."
-                iconSpinning: claudeBridgeProcess.running
-                enabled: !claudeBridgeProcess.running
-                bordered: true
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                onClicked: root.installClaudeBridge()
-              }
-
-              Text {
-                visible: root.bridgeMessage !== ""
-                width: parent.width
-                textFormat: Text.PlainText
-                text: root.bridgeMessage
-                color: Color.accent
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
               }
 
               Rectangle {
