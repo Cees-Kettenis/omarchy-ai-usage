@@ -60,6 +60,11 @@ class PanelContractTests(unittest.TestCase):
         self.assertLess(sleep_position, claude_position)
         self.assertIn("Only affects OpenAI", PANEL)
 
+    def test_privacy_header_and_settings_actions_are_consistent(self) -> None:
+        self.assertIn('text: "PRIVACY"', PANEL)
+        self.assertEqual(PANEL.count("width: settingsActions.actionWidth"), 2)
+        self.assertEqual(PANEL.count("height: settingsActions.actionHeight"), 2)
+
     def test_redundant_summary_headers_are_removed(self) -> None:
         self.assertNotIn("Preferred limit for every provider profile", PANEL)
         self.assertNotIn('text: "USAGE LEFT"', PANEL)

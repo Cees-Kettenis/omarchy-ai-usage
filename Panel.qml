@@ -1138,6 +1138,12 @@ Panel {
                 color: root.alpha(root.foreground, 0.16)
               }
 
+              PanelSectionHeader {
+                text: "PRIVACY"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
               Toggle {
                 width: parent.width
                 label: "Hide account details"
@@ -1168,8 +1174,12 @@ Panel {
                   id: settingsActions
                   anchors.right: parent.right
                   spacing: Style.space(8)
+                  readonly property real actionWidth: Style.space(76)
+                  readonly property real actionHeight: Style.space(32)
 
                   Button {
+                    width: settingsActions.actionWidth
+                    height: settingsActions.actionHeight
                     text: "Cancel"
                     bordered: true
                     foreground: root.foreground
@@ -1179,6 +1189,8 @@ Panel {
                   }
 
                   Button {
+                    width: settingsActions.actionWidth
+                    height: settingsActions.actionHeight
                     text: "Save"
                     iconText: "󰄬"
                     bordered: true
