@@ -1289,6 +1289,42 @@ Panel {
           }
 
           BorderSurface {
+            visible: root.sleepModeActive && root.refreshOnSchedule
+            width: parent.width
+            implicitHeight: sleepModeRow.implicitHeight + Style.space(18)
+            color: root.alpha(Color.accent, 0.10)
+            borderSpec: Border.flat(root.alpha(Color.accent, 0.30), 1)
+            radius: Style.cornerRadius
+
+            Row {
+              id: sleepModeRow
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: Style.space(9)
+              spacing: Style.space(9)
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "󰒲"
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.icon
+              }
+
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: "Sleep mode · OpenAI checks paused"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+              }
+            }
+          }
+
+          BorderSurface {
             visible: root.summaryView
               ? root.accounts.length === 0
               : !root.account || String(root.account.error || "") !== ""

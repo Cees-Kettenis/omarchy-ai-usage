@@ -92,7 +92,8 @@ class PanelContractTests(unittest.TestCase):
         self.assertNotIn('text: "USAGE LEFT"', PANEL)
         self.assertNotIn('text: "LIMITS"', PANEL)
         self.assertNotIn('text: "CREDITS"', PANEL)
-        self.assertNotIn("Sleep mode · OpenAI checks paused", PANEL)
+        self.assertIn("Sleep mode · OpenAI checks paused", PANEL)
+        self.assertNotIn("Scheduled OpenAI checks paused ", PANEL)
 
 
 if __name__ == "__main__":

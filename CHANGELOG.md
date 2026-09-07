@@ -25,8 +25,8 @@
 - Moved settings into the profile-switcher row after the final account tab.
 - Kept hover cooldown inline with refresh mode and interval, including when
   both refresh triggers are enabled.
-- Removed the duplicate sleep-status card; the footer remains the sole sleep
-  reminder.
+- Kept the sleep banner while removing its duplicate schedule subtitle; the
+  footer remains the sole place for schedule details.
 
 ### Security
 
