@@ -25,18 +25,18 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "refreshIntervalSec": 900,
       "codexProfilesRoot": "~/.codex-profiles",
+      "refreshMode": "Scheduled",
+      "refreshIntervalSec": 900,
+      "hoverCooldownSec": 60,
+      "sleepMode": "Off",
+      "sleepStart": "17:00",
+      "sleepEnd": "07:30",
       "claudeProfileMode": "Single account",
       "claudeProfileRoot": "~/.claude",
       "claudeProfilesRoot": "~/.claude-profiles",
-      "refreshMode": "Scheduled",
-      "hoverCooldownSec": 60,
       "profileNames": {},
-      "privacyMode": "On",
-      "sleepMode": "Off",
-      "sleepStart": "17:00",
-      "sleepEnd": "07:30"
+      "privacyMode": "On"
     },
     "schema": [
       {
@@ -45,6 +45,63 @@
         "label": "OpenAI profiles folder",
         "defaultValue": "~/.codex-profiles",
         "description": "A Codex home or a folder whose immediate subfolders contain Codex auth.json files."
+      },
+      {
+        "key": "refreshMode",
+        "type": "enum",
+        "label": "OpenAI refresh mode",
+        "options": [
+          "On hover/open",
+          "Scheduled",
+          "Both"
+        ],
+        "defaultValue": "Scheduled",
+        "description": "Fetch OpenAI API usage on interaction, on the configured schedule, or both. Claude usage arrives through Claude Code's status line."
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "OpenAI refresh interval (seconds)",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 900,
+        "description": "Interval between scheduled OpenAI API refreshes."
+      },
+      {
+        "key": "hoverCooldownSec",
+        "type": "integer",
+        "label": "OpenAI hover cooldown (seconds)",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 60,
+        "description": "Minimum time between hover-triggered OpenAI API refreshes."
+      },
+      {
+        "key": "sleepMode",
+        "type": "enum",
+        "label": "Pause scheduled OpenAI checks",
+        "options": [
+          "Off",
+          "On"
+        ],
+        "defaultValue": "Off",
+        "description": "Pause scheduled OpenAI usage checks during the configured sleep window."
+      },
+      {
+        "key": "sleepStart",
+        "type": "string",
+        "label": "Sleep starts",
+        "defaultValue": "17:00",
+        "description": "Local time in 24-hour HH:MM format."
+      },
+      {
+        "key": "sleepEnd",
+        "type": "string",
+        "label": "Sleep ends",
+        "defaultValue": "07:30",
+        "description": "Local time in 24-hour HH:MM format."
       },
       {
         "key": "claudeProfileMode",
@@ -72,28 +129,6 @@
         "description": "A parent folder whose immediate subfolders are separate CLAUDE_CONFIG_DIR homes."
       },
       {
-        "key": "refreshMode",
-        "type": "enum",
-        "label": "OpenAI refresh mode",
-        "options": [
-          "On hover/open",
-          "Scheduled",
-          "Both"
-        ],
-        "defaultValue": "Scheduled",
-        "description": "Fetch OpenAI API usage on interaction, on the configured schedule, or both. Claude usage arrives through Claude Code's status line."
-      },
-      {
-        "key": "hoverCooldownSec",
-        "type": "integer",
-        "label": "OpenAI hover cooldown (seconds)",
-        "min": 30,
-        "max": 3600,
-        "step": 30,
-        "defaultValue": 60,
-        "description": "Minimum time between hover-triggered OpenAI API refreshes."
-      },
-      {
         "key": "privacyMode",
         "type": "enum",
         "label": "Privacy mode",
@@ -103,41 +138,6 @@
         ],
         "defaultValue": "On",
         "description": "Hide account email and subscription details in the popup."
-      },
-      {
-        "key": "refreshIntervalSec",
-        "type": "integer",
-        "label": "OpenAI refresh interval (seconds)",
-        "min": 30,
-        "max": 3600,
-        "step": 30,
-        "defaultValue": 900,
-        "description": "Interval between scheduled OpenAI API refreshes."
-      },
-      {
-        "key": "sleepMode",
-        "type": "enum",
-        "label": "Sleep mode",
-        "options": [
-          "Off",
-          "On"
-        ],
-        "defaultValue": "Off",
-        "description": "Pause scheduled OpenAI usage checks during the configured sleep window."
-      },
-      {
-        "key": "sleepStart",
-        "type": "string",
-        "label": "Sleep starts",
-        "defaultValue": "17:00",
-        "description": "Local time in 24-hour HH:MM format."
-      },
-      {
-        "key": "sleepEnd",
-        "type": "string",
-        "label": "Sleep ends",
-        "defaultValue": "07:30",
-        "description": "Local time in 24-hour HH:MM format."
       }
     ]
   }

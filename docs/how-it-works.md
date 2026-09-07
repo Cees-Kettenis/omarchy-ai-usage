@@ -123,22 +123,21 @@ switcher, and profile heading without renaming folders or changing credentials.
 Open the popup and select the gear button.
 
 <p align="center">
-  <img src="screenshots/settings.png" width="413" alt="AI Usage settings for profiles, privacy, and the sleep schedule">
+  <img src="screenshots/settings.png" width="413" alt="AI Usage settings for OpenAI, Claude, and privacy">
 </p>
 
 The settings panel controls:
 
-- OpenAI location and API refresh behavior. Choose hover/open, scheduled, or
-  both. The schedule interval and hover cooldown are configurable.
+- OpenAI location, API refresh behavior, and sleep schedule. Choose hover/open,
+  scheduled, or both. The schedule interval and hover cooldown are
+  configurable. Sleep only pauses scheduled OpenAI checks.
 - Claude account setup, with separate single-account and multiple-account
   locations. Single account is the default.
 - Hide account details. This is on by default and keeps identity data out of
   the request and cache.
-- Pause scheduled OpenAI checks. Set a local start and end time for the sleep
-  window.
-
-Sleep mode only pauses scheduled OpenAI checks. The last cached result stays
-visible, and hover/open and manual refreshes still work.
+The settings UI groups sleep with OpenAI and separates the provider sections
+with a line. Privacy is the only global setting. When sleep is active, the last
+cached result stays visible, and hover/open and manual refreshes still work.
 
 ## Refresh behavior
 

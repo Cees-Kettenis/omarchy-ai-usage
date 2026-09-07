@@ -390,13 +390,9 @@ Panel {
     if (persistSettings({ profileNames: names })) cancelProfileNameEdit()
   }
 
-  function handleTimeFieldKey(event, otherField) {
+  function handleSettingsFieldKey(event) {
     if (event.key === Qt.Key_Escape) {
       closeSettings(true)
-      event.accepted = true
-    } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
-      otherField.selectAll()
-      otherField.forceActiveFocus()
       event.accepted = true
     }
   }
@@ -789,7 +785,7 @@ Panel {
         Column {
           id: contentColumn
           width: contentScroll.width
-          spacing: Style.space(10)
+          spacing: Style.space(8)
 
           Row {
             width: parent.width
@@ -821,10 +817,8 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 width: parent.width
-                text: root.summaryView
-                  ? "Preferred limit for every provider profile"
-                  : root.accountMeta(root.account)
-                visible: text !== ""
+                text: root.accountMeta(root.account)
+                visible: !root.summaryView && text !== ""
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -847,21 +841,11 @@ Panel {
             }
           }
 
-          BorderSurface {
+          Column {
+            id: settingsColumn
             visible: root.editingSettings
             width: parent.width
-            implicitHeight: settingsColumn.implicitHeight + Style.space(22)
-            color: root.alpha(root.foreground, 0.035)
-            borderSpec: Border.flat(root.alpha(root.foreground, 0.14), 1)
-            radius: Style.cornerRadius
-
-            Column {
-              id: settingsColumn
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.margins: Style.space(11)
-              spacing: Style.space(10)
+            spacing: Style.space(8)
 
               Row {
                 width: parent.width
@@ -869,7 +853,7 @@ Panel {
 
                 PanelSectionHeader {
                   width: Math.max(0, parent.width - openAiHelpButton.width - parent.spacing)
-                  text: "OPENAI SETTINGS"
+                  text: "OPENAI"
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                 }
@@ -900,7 +884,7 @@ Panel {
                   font.pixelSize: Style.font.body
                   onTextChanged: root.draftCodexProfilesRoot = text
                   onAccepted: root.saveSettings()
-                  Keys.onPressed: function(event) { root.handleTimeFieldKey(event, sleepStartField) }
+                  Keys.onPressed: function(event) { root.handleSettingsFieldKey(event) }
                 }
 
                 Button {
@@ -920,30 +904,38 @@ Panel {
                 }
               }
 
-              Dropdown {
-                id: refreshModeField
+              Row {
                 width: parent.width
-                label: "API refresh behavior"
-                value: root.draftRefreshMode
-                options: ["On hover/open", "Scheduled", "Both"]
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                onChanged: function(value) { root.draftRefreshMode = value }
-              }
+                spacing: Style.space(8)
 
-              NumberField {
-                id: refreshIntervalField
-                visible: root.draftRefreshMode !== "On hover/open"
-                label: "Schedule interval (minutes)"
-                value: root.draftRefreshIntervalMin
-                from: 1
-                to: 60
-                stepSize: 1
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                onModified: function(value) { root.draftRefreshIntervalMin = value }
+                Dropdown {
+                  id: refreshModeField
+                  width: refreshIntervalField.visible
+                    ? Math.max(0, parent.width - refreshIntervalField.width - parent.spacing)
+                    : parent.width
+                  label: "Refresh"
+                  value: root.draftRefreshMode
+                  options: ["On hover/open", "Scheduled", "Both"]
+                  foreground: root.foreground
+                  accent: Color.accent
+                  fontFamily: root.fontFamily
+                  onChanged: function(value) { root.draftRefreshMode = value }
+                }
+
+                NumberField {
+                  id: refreshIntervalField
+                  visible: root.draftRefreshMode !== "On hover/open"
+                  width: visible ? Style.space(120) : 0
+                  label: "Interval (min)"
+                  value: root.draftRefreshIntervalMin
+                  from: 1
+                  to: 60
+                  stepSize: 1
+                  foreground: root.foreground
+                  accent: Color.accent
+                  fontFamily: root.fontFamily
+                  onModified: function(value) { root.draftRefreshIntervalMin = value }
+                }
               }
 
               NumberField {
@@ -960,13 +952,64 @@ Panel {
                 onModified: function(value) { root.draftHoverCooldownSec = value }
               }
 
+              Toggle {
+                width: parent.width
+                label: "Pause scheduled checks"
+                description: "Only affects OpenAI. Manual and hover refreshes still work."
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                checked: root.draftSleepModeEnabled
+                onClicked: root.draftSleepModeEnabled = !root.draftSleepModeEnabled
+              }
+
+              Row {
+                visible: root.draftSleepModeEnabled
+                width: parent.width
+                spacing: Style.space(8)
+
+                TextField {
+                  id: sleepStartField
+                  width: (parent.width - parent.spacing) / 2
+                  placeholderText: "From 17:00"
+                  maximumLength: 5
+                  inputMethodHints: Qt.ImhFormattedNumbersOnly
+                  foreground: root.foreground
+                  accent: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  onAccepted: root.saveSettings()
+                  Keys.onPressed: function(event) { root.handleSettingsFieldKey(event) }
+                }
+
+                TextField {
+                  id: sleepEndField
+                  width: (parent.width - parent.spacing) / 2
+                  placeholderText: "Until 07:30"
+                  maximumLength: 5
+                  inputMethodHints: Qt.ImhFormattedNumbersOnly
+                  foreground: root.foreground
+                  accent: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  onAccepted: root.saveSettings()
+                  Keys.onPressed: function(event) { root.handleSettingsFieldKey(event) }
+                }
+              }
+
+              Rectangle {
+                width: parent.width
+                height: 1
+                color: root.alpha(root.foreground, 0.16)
+              }
+
               Row {
                 width: parent.width
                 spacing: Style.space(6)
 
                 PanelSectionHeader {
                   width: Math.max(0, parent.width - claudeHelpButton.width - parent.spacing)
-                  text: "CLAUDE SETTINGS"
+                  text: "CLAUDE"
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                 }
@@ -1010,7 +1053,7 @@ Panel {
                   font.pixelSize: Style.font.body
                   onTextChanged: root.draftClaudeProfileRoot = text
                   onAccepted: root.saveSettings()
-                  Keys.onPressed: function(event) { root.handleTimeFieldKey(event, codexProfilesRootField) }
+                  Keys.onPressed: function(event) { root.handleSettingsFieldKey(event) }
                 }
 
                 Button {
@@ -1045,7 +1088,7 @@ Panel {
                   font.pixelSize: Style.font.body
                   onTextChanged: root.draftClaudeProfilesRoot = text
                   onAccepted: root.saveSettings()
-                  Keys.onPressed: function(event) { root.handleTimeFieldKey(event, codexProfilesRootField) }
+                  Keys.onPressed: function(event) { root.handleSettingsFieldKey(event) }
                 }
 
                 Button {
@@ -1089,10 +1132,10 @@ Panel {
                 wrapMode: Text.WordWrap
               }
 
-              PanelSectionHeader {
-                text: "PRIVACY"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
+              Rectangle {
+                width: parent.width
+                height: 1
+                color: root.alpha(root.foreground, 0.16)
               }
 
               Toggle {
@@ -1104,84 +1147,6 @@ Panel {
                 fontFamily: root.fontFamily
                 checked: root.draftPrivacyModeEnabled
                 onClicked: root.draftPrivacyModeEnabled = !root.draftPrivacyModeEnabled
-              }
-
-              PanelSectionHeader {
-                text: "SLEEP SCHEDULE"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-              }
-
-              Toggle {
-                width: parent.width
-                label: "Pause scheduled OpenAI checks"
-                description: "Hover/open and manual refreshes remain available."
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                checked: root.draftSleepModeEnabled
-                onClicked: root.draftSleepModeEnabled = !root.draftSleepModeEnabled
-              }
-
-              Row {
-                width: parent.width
-                spacing: Style.space(10)
-
-                Column {
-                  width: (parent.width - parent.spacing) / 2
-                  spacing: Style.space(5)
-
-                  Text {
-                    textFormat: Text.PlainText
-                    text: "FROM"
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.bold: true
-                  }
-
-                  TextField {
-                    id: sleepStartField
-                    width: parent.width
-                    placeholderText: "17:00"
-                    maximumLength: 5
-                    inputMethodHints: Qt.ImhFormattedNumbersOnly
-                    foreground: root.foreground
-                    accent: Color.accent
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    onAccepted: root.saveSettings()
-                    Keys.onPressed: function(event) { root.handleTimeFieldKey(event, sleepEndField) }
-                  }
-                }
-
-                Column {
-                  width: (parent.width - parent.spacing) / 2
-                  spacing: Style.space(5)
-
-                  Text {
-                    textFormat: Text.PlainText
-                    text: "UNTIL"
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.bold: true
-                  }
-
-                  TextField {
-                    id: sleepEndField
-                    width: parent.width
-                    placeholderText: "07:30"
-                    maximumLength: 5
-                    inputMethodHints: Qt.ImhFormattedNumbersOnly
-                    foreground: root.foreground
-                    accent: Color.accent
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    onAccepted: root.saveSettings()
-                    Keys.onPressed: function(event) { root.handleTimeFieldKey(event, sleepStartField) }
-                  }
-                }
               }
 
               Text {
@@ -1225,7 +1190,6 @@ Panel {
                   }
                 }
               }
-            }
           }
 
           Row {
@@ -1356,13 +1320,6 @@ Panel {
             }
           }
 
-          PanelSectionHeader {
-            visible: root.summaryView && root.accounts.length > 0
-            text: "USAGE LEFT"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
           Repeater {
             model: root.summaryView ? root.accounts : []
 
@@ -1372,7 +1329,7 @@ Panel {
               readonly property var summaryLimit: root.preferredLimit(modelData)
               readonly property bool editingName: root.editingProfileId === root.cleanText(modelData.id, "")
               width: contentColumn.width
-              implicitHeight: summaryColumn.implicitHeight + Style.space(20)
+              implicitHeight: summaryColumn.implicitHeight + Style.space(16)
               color: root.alpha(root.foreground, 0.035)
               borderSpec: Border.flat(root.alpha(root.foreground, 0.12), 1)
               radius: Style.cornerRadius
@@ -1382,8 +1339,8 @@ Panel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.margins: Style.space(10)
-                spacing: Style.space(7)
+                anchors.margins: Style.space(8)
+                spacing: Style.space(6)
 
                 Row {
                   width: parent.width
@@ -1518,20 +1475,13 @@ Panel {
             }
           }
 
-          PanelSectionHeader {
-            visible: !root.summaryView && !!root.account && (root.account.limits || []).length > 0
-            text: "LIMITS"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
           Repeater {
             model: root.account ? (root.account.limits || []) : []
 
             BorderSurface {
               required property var modelData
               width: contentColumn.width
-              implicitHeight: limitColumn.implicitHeight + Style.space(20)
+              implicitHeight: limitColumn.implicitHeight + Style.space(16)
               color: root.alpha(root.foreground, 0.035)
               borderSpec: Border.flat(root.alpha(root.foreground, 0.12), 1)
               radius: Style.cornerRadius
@@ -1541,8 +1491,8 @@ Panel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.margins: Style.space(10)
-                spacing: Style.space(7)
+                anchors.margins: Style.space(8)
+                spacing: Style.space(6)
 
                 Row {
                   width: parent.width
@@ -1595,17 +1545,10 @@ Panel {
             }
           }
 
-          PanelSectionHeader {
-            visible: !!root.account && !!root.account.credits
-            text: "CREDITS"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-
           BorderSurface {
             visible: !!root.account && !!root.account.credits
             width: parent.width
-            implicitHeight: creditsColumn.implicitHeight + Style.space(20)
+            implicitHeight: creditsColumn.implicitHeight + Style.space(16)
             color: root.alpha(root.foreground, 0.035)
             borderSpec: Border.flat(root.alpha(root.foreground, 0.12), 1)
             radius: Style.cornerRadius
@@ -1615,8 +1558,8 @@ Panel {
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              anchors.margins: Style.space(10)
-              spacing: Style.space(7)
+              anchors.margins: Style.space(8)
+              spacing: Style.space(6)
 
               Row {
                 width: parent.width

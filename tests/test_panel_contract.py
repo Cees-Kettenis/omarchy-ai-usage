@@ -49,10 +49,22 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("running: root.refreshOnSchedule", PANEL)
 
     def test_refresh_settings_are_labeled_as_openai_only(self) -> None:
-        self.assertIn('text: "OPENAI SETTINGS"', PANEL)
-        self.assertIn('label: "API refresh behavior"', PANEL)
-        self.assertIn('label: "Schedule interval (minutes)"', PANEL)
+        self.assertIn('text: "OPENAI"', PANEL)
+        self.assertIn('label: "Refresh"', PANEL)
+        self.assertIn('label: "Interval (min)"', PANEL)
         self.assertIn("OpenAI refresh settings do not request Claude usage", PANEL)
+
+    def test_sleep_schedule_is_part_of_openai_settings(self) -> None:
+        sleep_position = PANEL.index('label: "Pause scheduled checks"')
+        claude_position = PANEL.index('text: "CLAUDE"')
+        self.assertLess(sleep_position, claude_position)
+        self.assertIn("Only affects OpenAI", PANEL)
+
+    def test_redundant_summary_headers_are_removed(self) -> None:
+        self.assertNotIn("Preferred limit for every provider profile", PANEL)
+        self.assertNotIn('text: "USAGE LEFT"', PANEL)
+        self.assertNotIn('text: "LIMITS"', PANEL)
+        self.assertNotIn('text: "CREDITS"', PANEL)
 
 
 if __name__ == "__main__":
