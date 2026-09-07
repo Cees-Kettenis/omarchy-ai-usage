@@ -22,6 +22,7 @@
   Claude usage setup is a one-time status-line installation.
 - Removed the redundant summary logo and title, moved settings to the left,
   and aligned refresh controls through a shared label and control grid.
+- Moved settings into the profile-switcher row after the final account tab.
 
 ### Security
 

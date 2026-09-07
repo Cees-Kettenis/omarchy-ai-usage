@@ -75,6 +75,8 @@ class PanelContractTests(unittest.TestCase):
         self.assertEqual(PANEL.count('text: "󱚣"'), 1)
         self.assertNotIn('? "AI usage"', PANEL)
         self.assertLess(PANEL.index("id: settingsButton"), PANEL.index("id: settingsColumn"))
+        repeater_position = PANEL.index("model: root.accounts", PANEL.index("id: viewSwitch"))
+        self.assertLess(repeater_position, PANEL.index("id: settingsButton"))
 
     def test_redundant_summary_headers_are_removed(self) -> None:
         self.assertNotIn("Preferred limit for every provider profile", PANEL)

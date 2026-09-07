@@ -788,8 +788,51 @@ Panel {
           spacing: Style.space(8)
 
           Row {
+            id: viewSwitch
             width: parent.width
-            spacing: Style.space(8)
+            spacing: Style.spacing.sm
+
+            readonly property real tabHeight: Style.space(30)
+            readonly property real summaryWidth: Style.space(34)
+            readonly property real settingsWidth: tabHeight
+            readonly property real accountWidth: root.accounts.length > 0
+              ? (width - summaryWidth - settingsWidth - spacing * (root.accounts.length + 1))
+                / root.accounts.length
+              : 0
+
+            Button {
+              width: viewSwitch.summaryWidth
+              height: viewSwitch.tabHeight
+              iconText: "󰄧"
+              tooltipText: "Summary"
+              selected: root.summaryView
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              iconSize: Style.font.icon
+              horizontalPadding: Style.space(4)
+              onClicked: root.selectTab(0)
+            }
+
+            Repeater {
+              model: root.accounts
+
+              Button {
+                required property var modelData
+                required property int index
+                width: viewSwitch.accountWidth
+                height: viewSwitch.tabHeight
+                text: root.displayProfileName(modelData)
+                tooltipText: String(modelData.providerLabel || "AI") + " · " + text
+                selected: index + 1 === root.selectedTabIndex
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                fontSize: Style.font.caption
+                horizontalPadding: Style.space(4)
+                onClicked: root.selectTab(index + 1)
+              }
+            }
 
             PanelActionButton {
               id: settingsButton
@@ -799,37 +842,22 @@ Panel {
               foreground: root.foreground
               fontFamily: root.fontFamily
               fontSize: Style.font.subtitle
-              size: Style.space(28)
+              size: viewSwitch.settingsWidth
               bordered: true
               hasCursor: root.editingSettings
               onClicked: root.toggleSettings()
             }
+          }
 
-            Column {
-              visible: !root.summaryView
-              width: visible ? Math.max(0, parent.width - x) : 0
-              spacing: Style.space(2)
-
-              Text {
-                textFormat: Text.PlainText
-                text: root.displayProfileName(root.account)
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-              }
-
-              Text {
-                textFormat: Text.PlainText
-                width: parent.width
-                text: root.accountMeta(root.account)
-                visible: !root.summaryView && text !== ""
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-              }
-            }
+          Text {
+            visible: !root.summaryView && text !== ""
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.accountMeta(root.account)
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
           }
 
           Column {
@@ -1243,53 +1271,6 @@ Panel {
                   }
                 }
               }
-          }
-
-          Row {
-            id: viewSwitch
-            visible: root.accounts.length > 0
-            width: parent.width
-            spacing: Style.spacing.sm
-
-            readonly property real tabHeight: Style.space(30)
-            readonly property real summaryWidth: Style.space(34)
-            readonly property real accountWidth: root.accounts.length > 0
-              ? (width - summaryWidth - spacing * root.accounts.length) / root.accounts.length
-              : 0
-
-            Button {
-              width: viewSwitch.summaryWidth
-              height: viewSwitch.tabHeight
-              iconText: "󰄧"
-              tooltipText: "Summary"
-              selected: root.summaryView
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              iconSize: Style.font.icon
-              horizontalPadding: Style.space(4)
-              onClicked: root.selectTab(0)
-            }
-
-            Repeater {
-              model: root.accounts
-
-              Button {
-                required property var modelData
-                required property int index
-                width: viewSwitch.accountWidth
-                height: viewSwitch.tabHeight
-                text: root.displayProfileName(modelData)
-                tooltipText: String(modelData.providerLabel || "AI") + " · " + text
-                selected: index + 1 === root.selectedTabIndex
-                bordered: true
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.caption
-                horizontalPadding: Style.space(4)
-                onClicked: root.selectTab(index + 1)
-              }
-            }
           }
 
           BorderSurface {
