@@ -789,25 +789,30 @@ Panel {
 
           Row {
             width: parent.width
-            spacing: Style.space(12)
+            spacing: Style.space(8)
 
-            Text {
+            PanelActionButton {
+              id: settingsButton
               anchors.verticalCenter: parent.verticalCenter
-              text: "󱚣"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
+              iconText: "󰒓"
+              tooltipText: root.editingSettings ? "Close settings" : "Settings"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.subtitle
+              size: Style.space(28)
+              bordered: true
+              hasCursor: root.editingSettings
+              onClicked: root.toggleSettings()
             }
 
             Column {
-              width: Math.max(0, parent.width - x - settingsButton.width - parent.spacing)
+              visible: !root.summaryView
+              width: visible ? Math.max(0, parent.width - x) : 0
               spacing: Style.space(2)
 
               Text {
                 textFormat: Text.PlainText
-                text: root.summaryView
-                  ? "AI usage"
-                  : root.displayProfileName(root.account)
+                text: root.displayProfileName(root.account)
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -824,20 +829,6 @@ Panel {
                 font.pixelSize: Style.font.caption
                 elide: Text.ElideRight
               }
-            }
-
-            PanelActionButton {
-              id: settingsButton
-              anchors.verticalCenter: parent.verticalCenter
-              iconText: "󰒓"
-              tooltipText: root.editingSettings ? "Close settings" : "Settings"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              fontSize: Style.font.subtitle
-              size: Style.space(28)
-              bordered: true
-              hasCursor: root.editingSettings
-              onClicked: root.toggleSettings()
             }
           }
 
@@ -891,7 +882,7 @@ Panel {
 
                 Button {
                   id: browseCodexProfilesButton
-                  width: codexProfilesRootField.implicitHeight
+                  width: settingsColumn.controlHeight
                   height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
@@ -906,39 +897,77 @@ Panel {
                 }
               }
 
-              Row {
+              Column {
+                id: refreshControls
                 width: parent.width
-                spacing: Style.space(8)
+                spacing: Style.space(4)
+                readonly property real intervalWidth: Style.space(120)
 
-                Dropdown {
-                  id: refreshModeField
-                  width: refreshIntervalField.visible
-                    ? Math.max(0, parent.width - refreshIntervalField.width - parent.spacing)
-                    : parent.width
-                  label: "Refresh"
-                  rowHeight: settingsColumn.controlHeight
-                  value: root.draftRefreshMode
-                  options: ["On hover/open", "Scheduled", "Both"]
-                  foreground: root.foreground
-                  accent: Color.accent
-                  fontFamily: root.fontFamily
-                  onChanged: function(value) { root.draftRefreshMode = value }
+                Row {
+                  width: parent.width
+                  spacing: Style.space(8)
+
+                  Text {
+                    width: refreshIntervalField.visible
+                      ? Math.max(0, parent.width - refreshControls.intervalWidth - parent.spacing)
+                      : parent.width
+                    textFormat: Text.PlainText
+                    text: "Refresh"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+
+                  Text {
+                    visible: refreshIntervalField.visible
+                    width: visible ? refreshControls.intervalWidth : 0
+                    textFormat: Text.PlainText
+                    text: "Interval (min)"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
                 }
 
-                NumberField {
-                  id: refreshIntervalField
-                  visible: root.draftRefreshMode !== "On hover/open"
-                  width: visible ? Style.space(120) : 0
-                  label: "Interval (min)"
-                  field.implicitHeight: settingsColumn.controlHeight
-                  value: root.draftRefreshIntervalMin
-                  from: 1
-                  to: 60
-                  stepSize: 1
-                  foreground: root.foreground
-                  accent: Color.accent
-                  fontFamily: root.fontFamily
-                  onModified: function(value) { root.draftRefreshIntervalMin = value }
+                Row {
+                  width: parent.width
+                  height: settingsColumn.controlHeight
+                  spacing: Style.space(8)
+
+                  Dropdown {
+                    id: refreshModeField
+                    width: refreshIntervalField.visible
+                      ? Math.max(0, parent.width - refreshControls.intervalWidth - parent.spacing)
+                      : parent.width
+                    height: settingsColumn.controlHeight
+                    showLabel: false
+                    rowHeight: settingsColumn.controlHeight
+                    value: root.draftRefreshMode
+                    options: ["On hover/open", "Scheduled", "Both"]
+                    foreground: root.foreground
+                    accent: Color.accent
+                    fontFamily: root.fontFamily
+                    onChanged: function(value) { root.draftRefreshMode = value }
+                  }
+
+                  NumberField {
+                    id: refreshIntervalField
+                    visible: root.draftRefreshMode !== "On hover/open"
+                    width: visible ? refreshControls.intervalWidth : 0
+                    height: settingsColumn.controlHeight
+                    fieldWidth: width
+                    field.height: settingsColumn.controlHeight
+                    value: root.draftRefreshIntervalMin
+                    from: 1
+                    to: 60
+                    stepSize: 1
+                    foreground: root.foreground
+                    accent: Color.accent
+                    fontFamily: root.fontFamily
+                    onModified: function(value) { root.draftRefreshIntervalMin = value }
+                  }
                 }
               }
 
@@ -946,7 +975,7 @@ Panel {
                 id: hoverCooldownField
                 visible: root.draftRefreshMode !== "Scheduled"
                 label: "Hover cooldown (seconds)"
-                field.implicitHeight: settingsColumn.controlHeight
+                field.height: settingsColumn.controlHeight
                 value: root.draftHoverCooldownSec
                 from: 30
                 to: 3600
@@ -1067,7 +1096,7 @@ Panel {
 
                 Button {
                   id: browseClaudeProfileButton
-                  width: claudeProfileRootField.implicitHeight
+                  width: settingsColumn.controlHeight
                   height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
@@ -1103,7 +1132,7 @@ Panel {
 
                 Button {
                   id: browseClaudeProfilesButton
-                  width: claudeProfilesRootField.implicitHeight
+                  width: settingsColumn.controlHeight
                   height: settingsColumn.controlHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"

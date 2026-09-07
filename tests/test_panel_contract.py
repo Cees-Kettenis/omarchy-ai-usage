@@ -50,8 +50,8 @@ class PanelContractTests(unittest.TestCase):
 
     def test_refresh_settings_are_labeled_as_openai_only(self) -> None:
         self.assertIn('text: "OPENAI"', PANEL)
-        self.assertIn('label: "Refresh"', PANEL)
-        self.assertIn('label: "Interval (min)"', PANEL)
+        self.assertIn('text: "Refresh"', PANEL)
+        self.assertIn('text: "Interval (min)"', PANEL)
         self.assertIn("OpenAI refresh settings do not request Claude usage", PANEL)
 
     def test_sleep_schedule_is_part_of_openai_settings(self) -> None:
@@ -68,7 +68,13 @@ class PanelContractTests(unittest.TestCase):
     def test_settings_controls_share_a_height(self) -> None:
         self.assertIn("readonly property real controlHeight", PANEL)
         self.assertGreaterEqual(PANEL.count("settingsColumn.controlHeight"), 12)
+        self.assertIn("field.height: settingsColumn.controlHeight", PANEL)
         self.assertIn('text: claudeBridgeProcess.running ? "Setting up…" : "Set up Claude usage"', PANEL)
+
+    def test_summary_header_is_compact(self) -> None:
+        self.assertEqual(PANEL.count('text: "󱚣"'), 1)
+        self.assertNotIn('? "AI usage"', PANEL)
+        self.assertLess(PANEL.index("id: settingsButton"), PANEL.index("id: settingsColumn"))
 
     def test_redundant_summary_headers_are_removed(self) -> None:
         self.assertNotIn("Preferred limit for every provider profile", PANEL)

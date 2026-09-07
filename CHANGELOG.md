@@ -20,6 +20,8 @@
   settings with dividers, and removed redundant popup headings.
 - Matched the height of single-line settings controls and clarified that
   Claude usage setup is a one-time status-line installation.
+- Removed the redundant summary logo and title, moved settings to the left,
+  and aligned refresh controls through a shared label and control grid.
 
 ### Security
 
