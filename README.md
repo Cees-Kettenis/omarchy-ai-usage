@@ -42,17 +42,19 @@ omarchy plugin remove ai-usage
 - One summary for every OpenAI and Claude profile, with the five-hour limit
   preferred over the weekly limit.
 - A detail view for each profile with all available limits and reset times.
-- Refresh on hover/open, on a schedule, or both, plus a manual refresh button.
-- A configurable cooldown that prevents accidental repeated hover refreshes.
+- OpenAI API refresh on hover/open, on a schedule, or both, plus a manual
+  refresh button.
+- A configurable cooldown that prevents repeated OpenAI hover refreshes.
 - Privacy mode that skips account identity requests and hides account details.
-- A sleep schedule that pauses automatic checks without blocking manual ones.
+- A sleep schedule that pauses scheduled OpenAI checks without blocking manual
+  ones.
 
 ## Claude setup
 
-Set **Claude location** to `~/.claude` for one account, or to a parent folder
-whose immediate children are separate `CLAUDE_CONFIG_DIR` homes. Then select
-**Enable official Claude usage capture** in the widget settings and make a
-request in each Claude Code profile.
+Claude defaults to **Single account** at `~/.claude`. To use more accounts,
+choose **Multiple accounts** and select a parent folder whose immediate
+children are separate `CLAUDE_CONFIG_DIR` homes. Then select **Enable official
+Claude usage capture** and make a request in each Claude Code profile.
 
 Claude Code sends the documented five-hour and seven-day subscription windows
 to the plugin's local status-line command. The command does not use API tokens,
@@ -64,6 +66,10 @@ If a Claude profile already has a custom status line, setup leaves it unchanged
 instead of overwriting it. Enabling capture also displays a compact usage line
 inside Claude Code. See [How it works](docs/how-it-works.md) for manual setup,
 status-line tradeoffs, and multi-account examples.
+
+Profile names default to their folder names. Use the pencil beside a profile
+name to change that profile only. Saved names also appear in the profile
+switcher and profile heading.
 
 ## Documentation
 

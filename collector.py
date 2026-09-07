@@ -44,6 +44,7 @@ MAX_RESETS = 16
 MAX_PATH_LENGTH = 4096
 DEFAULT_CODEX_PROFILE_ROOT = Path.home() / ".codex-profiles"
 DEFAULT_CLAUDE_PROFILE_ROOT = Path.home() / ".claude"
+DEFAULT_CLAUDE_PROFILES_ROOT = Path.home() / ".claude-profiles"
 SHELL_CONFIG_FILE = Path.home() / ".config" / "omarchy" / "shell.json"
 CACHE_BASE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
 CACHE_ROOT = CACHE_BASE / "omarchy" / "ai-usage"
@@ -204,16 +205,21 @@ def safe_text(raw: Any, fallback: str = "", limit: int = MAX_TEXT_LENGTH) -> str
     return cleaned or str(fallback)[:limit]
 
 
-def configured_roots() -> tuple[str | None, str | None]:
-    """Read provider roots from the widget entry in the shell configuration."""
+def normalize_claude_profile_mode(raw: Any) -> str:
+    value = str(raw or "").strip().lower()
+    return "multiple" if value in ("multiple", "multiple accounts") else "single"
+
+
+def configured_provider_settings() -> tuple[str | None, str | None, str | None, str]:
+    """Read provider locations and Claude mode from the widget configuration."""
     try:
         config = json.loads(_read_secure_path(SHELL_CONFIG_FILE, MAX_CONFIG_BYTES).decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError, ValueError):
-        return None, None
+        return None, None, None, "single"
 
     layout = ((config.get("bar") or {}).get("layout") or {}) if isinstance(config, dict) else {}
     if not isinstance(layout, dict):
-        return None, None
+        return None, None, None, "single"
     for entries in layout.values():
         if not isinstance(entries, list):
             continue
@@ -222,13 +228,28 @@ def configured_roots() -> tuple[str | None, str | None]:
                 continue
             legacy = entry.get("profilesRoot")
             codex = entry.get("codexProfilesRoot")
-            claude = entry.get("claudeProfilesRoot")
+            claude_single = entry.get("claudeProfileRoot")
+            claude_multiple = entry.get("claudeProfilesRoot")
+            has_mode = isinstance(entry.get("claudeProfileMode"), str)
+            mode = normalize_claude_profile_mode(entry.get("claudeProfileMode"))
             codex_value = codex if isinstance(codex, str) and codex.strip() else legacy
+            # Before account modes existed, claudeProfilesRoot also represented
+            # the default single ~/.claude home. Treat that value as single on
+            # upgrade unless the user has explicitly chosen a mode.
+            if not has_mode and not (isinstance(claude_single, str) and claude_single.strip()):
+                claude_single = claude_multiple
+                claude_multiple = None
             return (
                 codex_value.strip() if isinstance(codex_value, str) and codex_value.strip() else None,
-                claude.strip() if isinstance(claude, str) and claude.strip() else None,
+                claude_single.strip()
+                if isinstance(claude_single, str) and claude_single.strip()
+                else None,
+                claude_multiple.strip()
+                if isinstance(claude_multiple, str) and claude_multiple.strip()
+                else None,
+                mode,
             )
-    return None, None
+    return None, None, None, "single"
 
 
 def resolve_root(value: str | None, configured: str | None, default: Path) -> Path:
@@ -241,12 +262,28 @@ def resolve_root(value: str | None, configured: str | None, default: Path) -> Pa
     return Path(os.path.abspath(candidate))
 
 
-def resolve_profile_roots(codex_value: str | None, claude_value: str | None) -> tuple[Path, Path]:
-    configured_codex, configured_claude = configured_roots()
+def resolve_profile_configuration(
+    codex_value: str | None,
+    claude_value: str | None,
+    claude_mode: str | None,
+) -> tuple[Path, Path, str]:
+    configured_codex, configured_single, configured_multiple, configured_mode = (
+        configured_provider_settings()
+    )
+    mode = normalize_claude_profile_mode(claude_mode or configured_mode)
+    configured_claude = configured_single if mode == "single" else configured_multiple
+    default_claude = DEFAULT_CLAUDE_PROFILE_ROOT if mode == "single" else DEFAULT_CLAUDE_PROFILES_ROOT
     return (
         resolve_root(codex_value, configured_codex, DEFAULT_CODEX_PROFILE_ROOT),
-        resolve_root(claude_value, configured_claude, DEFAULT_CLAUDE_PROFILE_ROOT),
+        resolve_root(claude_value, configured_claude, default_claude),
+        mode,
     )
+
+
+def resolve_profile_roots(codex_value: str | None, claude_value: str | None) -> tuple[Path, Path]:
+    """Backward-compatible provider root resolver."""
+    codex_root, claude_root, _ = resolve_profile_configuration(codex_value, claude_value, None)
+    return codex_root, claude_root
 
 
 def resolve_profile_root(value: str | None) -> Path:
@@ -693,16 +730,29 @@ def _directory_has_marker(directory: int, marker: str) -> bool:
         os.close(descriptor)
 
 
-def discover_provider_profiles(profile_root: Path, marker: str) -> list[Path]:
-    """Find direct or immediate-child provider homes by an exact marker file."""
+def discover_provider_profiles(
+    profile_root: Path,
+    marker: str,
+    conflicting_marker: str,
+    mode: str = "auto",
+) -> list[Path]:
+    """Find unambiguous direct or immediate-child provider homes."""
+    if mode not in ("auto", "single", "multiple"):
+        raise ValueError(f"Unsupported profile discovery mode: {mode}")
     try:
         root = _open_directory_tree(profile_root)
     except FileNotFoundError:
         return []
     try:
         _require_owned_directory(root, f"Profiles folder {profile_root}")
-        if _directory_has_marker(root, marker):
+        root_matches = _directory_has_marker(root, marker)
+        root_conflicts = _directory_has_marker(root, conflicting_marker)
+        if root_conflicts:
+            return []
+        if root_matches and mode != "multiple":
             return [profile_root]
+        if mode == "single" or root_matches:
+            return []
         names: list[str] = []
         with os.scandir(root) as entries:
             for index, entry in enumerate(entries):
@@ -715,7 +765,9 @@ def discover_provider_profiles(profile_root: Path, marker: str) -> list[Path]:
                 except OSError:
                     continue
                 try:
-                    if _directory_has_marker(child, marker):
+                    matches = _directory_has_marker(child, marker)
+                    conflicts = _directory_has_marker(child, conflicting_marker)
+                    if matches and not conflicts:
                         names.append(entry.name)
                 finally:
                     os.close(child)
@@ -728,11 +780,16 @@ def discover_provider_profiles(profile_root: Path, marker: str) -> list[Path]:
 
 def discover_profiles(profile_root: Path) -> list[Path]:
     """Discover Codex homes while skipping directories belonging to other providers."""
-    return discover_provider_profiles(profile_root, "auth.json")
+    return discover_provider_profiles(profile_root, "auth.json", ".credentials.json")
 
 
-def discover_claude_profiles(profile_root: Path) -> list[Path]:
-    return discover_provider_profiles(profile_root, ".credentials.json")
+def discover_claude_profiles(profile_root: Path, mode: str = "auto") -> list[Path]:
+    return discover_provider_profiles(
+        profile_root,
+        ".credentials.json",
+        "auth.json",
+        normalize_claude_profile_mode(mode) if mode != "auto" else "auto",
+    )
 
 
 def _claude_status_name(profile_home: Path) -> str:
@@ -914,8 +971,8 @@ def install_claude_bridge(profile_home: Path) -> str:
     return f"Enabled Claude usage capture for {profile_home}; make a Claude Code request to populate usage"
 
 
-def install_claude_bridges(profile_root: Path) -> list[str]:
-    profiles = discover_claude_profiles(profile_root)
+def install_claude_bridges(profile_root: Path, mode: str = "auto") -> list[str]:
+    profiles = discover_claude_profiles(profile_root, mode)
     if not profiles:
         raise ValueError(f"No Claude profiles found in {profile_root}")
     return [install_claude_bridge(profile) for profile in profiles]
@@ -1001,7 +1058,7 @@ def probe_claude_profile(
         if not logged_in:
             error = "Claude Code is not signed in for this profile"
         elif snapshot is None:
-            error = "Waiting for Claude Code to report usage through its status line"
+            error = "Send your first message in Claude Code to get usage information"
         elif not limits:
             error = "Claude Code has not reported subscription limits yet"
         result: dict[str, Any] = {
@@ -1089,6 +1146,7 @@ def sanitize_payload(raw: Any) -> dict[str, Any]:
         "profilesRoot": safe_text(raw.get("profilesRoot") or raw.get("codexProfilesRoot")),
         "codexProfilesRoot": safe_text(raw.get("codexProfilesRoot") or raw.get("profilesRoot")),
         "claudeProfilesRoot": safe_text(raw.get("claudeProfilesRoot")),
+        "claudeProfileMode": normalize_claude_profile_mode(raw.get("claudeProfileMode")),
         "includesIdentity": raw.get("includesIdentity") is True,
         "error": safe_text(raw.get("error")),
         "accounts": accounts,
@@ -1184,9 +1242,11 @@ def refresh_cache(
     force: bool = False,
     include_identity: bool = False,
     claude_profile_root: Path | None = None,
+    claude_profile_mode: str = "single",
 ) -> dict[str, Any]:
     codex_profile_root = profile_root
     claude_profile_root = claude_profile_root or DEFAULT_CLAUDE_PROFILE_ROOT
+    claude_profile_mode = normalize_claude_profile_mode(claude_profile_mode)
     refresh_deadline = time.monotonic() + REFRESH_TIMEOUT_SECONDS
     directory = ensure_cache_root()
     lock: int | None = None
@@ -1205,12 +1265,13 @@ def refresh_cache(
             roots_match = (
                 cached.get("codexProfilesRoot") == str(codex_profile_root)
                 and cached.get("claudeProfilesRoot") == str(claude_profile_root)
+                and cached.get("claudeProfileMode") == claude_profile_mode
             )
             if roots_match and identity_matches and 0 <= age_ms <= 45_000:
                 return cached
 
         codex_profiles = discover_profiles(codex_profile_root)
-        claude_profiles = discover_claude_profiles(claude_profile_root)
+        claude_profiles = discover_claude_profiles(claude_profile_root, claude_profile_mode)
         codex_command = resolve_codex_command()
         claude_command = resolve_claude_command()
         accounts_by_key: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1271,6 +1332,7 @@ def refresh_cache(
             "profilesRoot": str(codex_profile_root),
             "codexProfilesRoot": str(codex_profile_root),
             "claudeProfilesRoot": str(claude_profile_root),
+            "claudeProfileMode": claude_profile_mode,
             "includesIdentity": include_identity,
             "error": global_error,
             "accounts": accounts,
@@ -1388,7 +1450,12 @@ def main() -> int:
     parser.add_argument(
         "--claude-profiles-root",
         metavar="PATH",
-        help="Claude config home or folder whose immediate subdirectories are Claude homes",
+        help="Claude config home in single mode or parent folder in multiple mode",
+    )
+    parser.add_argument(
+        "--claude-profile-mode",
+        choices=("single", "multiple"),
+        help="treat the Claude location as one config home or a parent of config homes",
     )
     parser.add_argument(
         "--install-claude-bridge",
@@ -1401,13 +1468,13 @@ def main() -> int:
     if args.profiles_root and args.codex_profiles_root:
         parser.error("--profiles-root and --codex-profiles-root cannot be used together")
     codex_value = args.codex_profiles_root or args.profiles_root
-    codex_profile_root, claude_profile_root = resolve_profile_roots(
-        codex_value, args.claude_profiles_root
+    codex_profile_root, claude_profile_root, claude_profile_mode = resolve_profile_configuration(
+        codex_value, args.claude_profiles_root, args.claude_profile_mode
     )
 
     if args.install_claude_bridge:
         try:
-            for message in install_claude_bridges(claude_profile_root):
+            for message in install_claude_bridges(claude_profile_root, claude_profile_mode):
                 print(message)
             return 0
         except Exception as exc:
@@ -1423,6 +1490,7 @@ def main() -> int:
                 force=args.force,
                 include_identity=args.show_identity,
                 claude_profile_root=claude_profile_root,
+                claude_profile_mode=claude_profile_mode,
             )
         )
     except Exception as exc:

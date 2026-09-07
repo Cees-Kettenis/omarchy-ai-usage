@@ -173,6 +173,104 @@ class ProfileSecurityTests(unittest.TestCase):
                 [root / "personal", root / "work"],
             )
 
+    def test_claude_discovery_modes_do_not_cross_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            root_credentials = root / ".credentials.json"
+            root_credentials.write_text("{}", encoding="utf-8")
+            root_credentials.chmod(0o600)
+            child = root / "child"
+            child.mkdir(mode=0o700)
+            child_credentials = child / ".credentials.json"
+            child_credentials.write_text("{}", encoding="utf-8")
+            child_credentials.chmod(0o600)
+
+            self.assertEqual(collector.discover_claude_profiles(root, "single"), [root])
+            self.assertEqual(collector.discover_claude_profiles(root, "multiple"), [])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            child = root / "child"
+            child.mkdir(mode=0o700)
+            credentials = child / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+
+            self.assertEqual(collector.discover_claude_profiles(root, "single"), [])
+            self.assertEqual(collector.discover_claude_profiles(root, "multiple"), [child])
+
+    def test_dual_marker_directories_are_ignored_by_both_providers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ambiguous = root / "ambiguous"
+            ambiguous.mkdir(mode=0o700)
+            for marker in ("auth.json", ".credentials.json"):
+                path = ambiguous / marker
+                path.write_text("{}", encoding="utf-8")
+                path.chmod(0o600)
+
+            self.assertEqual(collector.discover_profiles(root), [])
+            self.assertEqual(collector.discover_claude_profiles(root, "multiple"), [])
+
+    def test_legacy_claude_root_migrates_to_single_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            settings_file = Path(temporary) / "shell.json"
+            settings_file.write_text(
+                json.dumps(
+                    {
+                        "bar": {
+                            "layout": {
+                                "right": [
+                                    {
+                                        "id": collector.PLUGIN_ID,
+                                        "profilesRoot": "/codex-old",
+                                        "claudeProfilesRoot": "/claude-old",
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(collector, "SHELL_CONFIG_FILE", settings_file):
+                codex, single, multiple, mode = collector.configured_provider_settings()
+
+            self.assertEqual(codex, "/codex-old")
+            self.assertEqual(single, "/claude-old")
+            self.assertIsNone(multiple)
+            self.assertEqual(mode, "single")
+
+    def test_multiple_claude_mode_uses_its_separate_location(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            settings_file = Path(temporary) / "shell.json"
+            settings_file.write_text(
+                json.dumps(
+                    {
+                        "bar": {
+                            "layout": {
+                                "right": [
+                                    {
+                                        "id": collector.PLUGIN_ID,
+                                        "codexProfilesRoot": "/codex",
+                                        "claudeProfileMode": "Multiple accounts",
+                                        "claudeProfileRoot": "/claude-single",
+                                        "claudeProfilesRoot": "/claude-many",
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(collector, "SHELL_CONFIG_FILE", settings_file):
+                codex, claude, mode = collector.resolve_profile_configuration(None, None, None)
+
+            self.assertEqual(codex, Path("/codex"))
+            self.assertEqual(claude, Path("/claude-many"))
+            self.assertEqual(mode, "multiple")
+
 
 class ProcessSecurityTests(unittest.TestCase):
     def test_codex_resolution_does_not_use_path(self) -> None:

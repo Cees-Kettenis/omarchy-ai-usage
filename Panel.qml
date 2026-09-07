@@ -33,11 +33,17 @@ Panel {
   property bool refreshQueuedForce: false
   property double lastHoverRefreshMs: 0
   property bool editingSettings: false
+  property string editingProfileId: ""
+  property string draftProfileName: ""
+  property bool settingsMigrationComplete: false
   property bool draftPrivacyModeEnabled: true
   property bool draftSleepModeEnabled: true
   property string draftCodexProfilesRoot: "~/.codex-profiles"
-  property string draftClaudeProfilesRoot: "~/.claude"
+  property string draftClaudeProfileMode: "Single account"
+  property string draftClaudeProfileRoot: "~/.claude"
+  property string draftClaudeProfilesRoot: "~/.claude-profiles"
   property string draftRefreshMode: "Scheduled"
+  property int draftRefreshIntervalMin: 15
   property int draftHoverCooldownSec: 60
   property string folderPickerTarget: "codex"
   property string settingsError: ""
@@ -47,7 +53,14 @@ Panel {
   readonly property string codexProfilesRoot: String(
     setting("codexProfilesRoot", setting("profilesRoot", "~/.codex-profiles")) || "~/.codex-profiles"
   ).trim()
-  readonly property string claudeProfilesRoot: String(setting("claudeProfilesRoot", "~/.claude") || "~/.claude").trim()
+  readonly property string claudeProfileMode: String(setting("claudeProfileMode", "Single account") || "Single account")
+  readonly property string claudeProfileRoot: String(setting("claudeProfileRoot", "~/.claude") || "~/.claude").trim()
+  readonly property string claudeProfilesRoot: String(
+    setting("claudeProfilesRoot", "~/.claude-profiles") || "~/.claude-profiles"
+  ).trim()
+  readonly property string activeClaudeProfilesRoot: claudeProfileMode === "Multiple accounts"
+    ? claudeProfilesRoot : claudeProfileRoot
+  readonly property var profileNames: normalizedProfileNames(setting("profileNames", ({})))
   readonly property string refreshMode: String(setting("refreshMode", "Scheduled") || "Scheduled")
   readonly property int hoverCooldownSec: Math.max(30, Number(setting("hoverCooldownSec", 60)))
   readonly property bool refreshOnHover: refreshMode === "On hover/open" || refreshMode === "Both"
@@ -69,10 +82,48 @@ Panel {
   function alpha(color, opacity) { return Qt.rgba(color.r, color.g, color.b, opacity) }
   function clamp(value, minimum, maximum) { return Math.max(minimum, Math.min(maximum, value)) }
 
+  function hasSetting(key) {
+    return settings && typeof settings === "object"
+      && Object.prototype.hasOwnProperty.call(settings, key)
+  }
+
   function cleanText(value, fallback) {
     var text = String(value === undefined || value === null ? (fallback || "") : value)
       .replace(/[\x00-\x1f\x7f]/g, "").substring(0, 256)
     return text || String(fallback || "").substring(0, 256)
+  }
+
+  function normalizedProfileNames(raw) {
+    var result = {}
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result
+    var count = 0
+    for (var key in raw) {
+      if (count >= 64) break
+      var id = cleanText(key, "")
+      var name = cleanText(raw[key], "").trim().substring(0, 48)
+      if (id !== "" && name !== "") {
+        result[id] = name
+        count++
+      }
+    }
+    return result
+  }
+
+  function displayProfileName(value) {
+    if (!value) return ""
+    var id = cleanText(value.id, "")
+    return id !== "" && profileNames[id]
+      ? String(profileNames[id])
+      : defaultProfileName(value)
+  }
+
+  function defaultProfileName(value) {
+    if (!value) return ""
+    return cleanText(value.label || value.id, value.provider === "claude" ? "Claude" : "Codex")
+  }
+
+  function claudeModeArgument(value) {
+    return String(value || claudeProfileMode) === "Multiple accounts" ? "multiple" : "single"
   }
 
   function percent(value) {
@@ -121,9 +172,11 @@ Panel {
   function browseProfilesRoot(target) {
     if (folderPickerProcess.running) return
     folderPickerTarget = target
-    var currentPath = target === "claude"
-      ? (claudeProfilesRootField.text || claudeProfilesRoot)
-      : (codexProfilesRootField.text || codexProfilesRoot)
+    var currentPath = codexProfilesRootField.text || codexProfilesRoot
+    if (target === "claude-single")
+      currentPath = claudeProfileRootField.text || claudeProfileRoot
+    else if (target === "claude-multiple")
+      currentPath = claudeProfilesRootField.text || claudeProfilesRoot
     folderPickerProcess.command = [
       "/usr/bin/python3",
       "-I",
@@ -137,9 +190,13 @@ Panel {
     if (claudeBridgeProcess.running) return
     bridgeMessage = ""
     settingsError = ""
-    var profileRoot = String(claudeProfilesRootField.text || claudeProfilesRoot).trim()
+    var multiple = draftClaudeProfileMode === "Multiple accounts"
+    var profileRoot = multiple
+      ? String(claudeProfilesRootField.text || claudeProfilesRoot).trim()
+      : String(claudeProfileRootField.text || claudeProfileRoot).trim()
     claudeBridgeProcess.command = collectorCommand([
       "--claude-profiles-root", profileRoot,
+      "--claude-profile-mode", claudeModeArgument(draftClaudeProfileMode),
       "--install-claude-bridge"
     ], "15s")
     claudeBridgeProcess.running = true
@@ -169,19 +226,26 @@ Panel {
   }
 
   function openSettings() {
+    cancelProfileNameEdit(false)
     draftPrivacyModeEnabled = privacyModeEnabled
     draftSleepModeEnabled = sleepModeEnabled
     draftCodexProfilesRoot = codexProfilesRoot
+    draftClaudeProfileMode = claudeProfileMode
+    draftClaudeProfileRoot = claudeProfileRoot
     draftClaudeProfilesRoot = claudeProfilesRoot
     draftRefreshMode = refreshMode
+    draftRefreshIntervalMin = Math.max(1, Math.round(refreshIntervalSec / 60))
     draftHoverCooldownSec = hoverCooldownSec
     settingsError = ""
     bridgeMessage = ""
     editingSettings = true
     Qt.callLater(function() {
       codexProfilesRootField.text = codexProfilesRoot
+      claudeProfileModeField.value = claudeProfileMode
+      claudeProfileRootField.text = claudeProfileRoot
       claudeProfilesRootField.text = claudeProfilesRoot
       refreshModeField.value = refreshMode
+      refreshIntervalField.value = Math.max(1, Math.round(refreshIntervalSec / 60))
       hoverCooldownField.value = hoverCooldownSec
       sleepStartField.text = clockText(sleepStartMinute)
       sleepEndField.text = clockText(sleepEndMinute)
@@ -205,20 +269,22 @@ Panel {
 
   function saveSettings() {
     var codexRoot = String(codexProfilesRootField.text || "").trim()
-    var claudeRoot = String(claudeProfilesRootField.text || "").trim()
+    var claudeSingleRoot = String(claudeProfileRootField.text || "").trim()
+    var claudeMultipleRoot = String(claudeProfilesRootField.text || "").trim()
     var start = clockMinutes(sleepStartField.text, -1)
     var end = clockMinutes(sleepEndField.text, -1)
-    if (codexRoot === "" || claudeRoot === "") {
-      settingsError = "Choose both the Codex and Claude profile locations"
+    if (codexRoot === "" || claudeSingleRoot === "" || claudeMultipleRoot === "") {
+      settingsError = "Choose the OpenAI and Claude profile locations"
       return
     }
-    if (codexRoot.length > 4096 || claudeRoot.length > 4096) {
+    if (codexRoot.length > 4096 || claudeSingleRoot.length > 4096 || claudeMultipleRoot.length > 4096) {
       settingsError = "Profiles folder path is too long"
       return
     }
     var codexPathValid = codexRoot.charAt(0) === "/" || codexRoot === "~" || codexRoot.startsWith("~/")
-    var claudePathValid = claudeRoot.charAt(0) === "/" || claudeRoot === "~" || claudeRoot.startsWith("~/")
-    if (!codexPathValid || !claudePathValid) {
+    var claudeSingleValid = claudeSingleRoot.charAt(0) === "/" || claudeSingleRoot === "~" || claudeSingleRoot.startsWith("~/")
+    var claudeMultipleValid = claudeMultipleRoot.charAt(0) === "/" || claudeMultipleRoot === "~" || claudeMultipleRoot.startsWith("~/")
+    if (!codexPathValid || !claudeSingleValid || !claudeMultipleValid) {
       settingsError = "Use an absolute path or a path starting with ~/"
       return
     }
@@ -230,12 +296,18 @@ Panel {
       settingsError = "Start and end times must be different"
       return
     }
-    var profileRootChanged = codexRoot !== codexProfilesRoot || claudeRoot !== claudeProfilesRoot
+    var profileRootChanged = codexRoot !== codexProfilesRoot
+      || claudeSingleRoot !== claudeProfileRoot
+      || claudeMultipleRoot !== claudeProfilesRoot
+      || draftClaudeProfileMode !== claudeProfileMode
     var privacyModeChanged = draftPrivacyModeEnabled !== privacyModeEnabled
     if (persistSettings({
       codexProfilesRoot: codexRoot,
-      claudeProfilesRoot: claudeRoot,
+      claudeProfileMode: draftClaudeProfileMode,
+      claudeProfileRoot: claudeSingleRoot,
+      claudeProfilesRoot: claudeMultipleRoot,
       refreshMode: draftRefreshMode,
+      refreshIntervalSec: draftRefreshIntervalMin * 60,
       hoverCooldownSec: draftHoverCooldownSec,
       privacyMode: draftPrivacyModeEnabled ? "On" : "Off",
       sleepMode: draftSleepModeEnabled ? "On" : "Off",
@@ -245,6 +317,77 @@ Panel {
       closeSettings(true)
       if (profileRootChanged || privacyModeChanged) Qt.callLater(function() { refreshNow(true) })
     }
+  }
+
+  function migrateSettings() {
+    if (settingsMigrationComplete || !bar || !bar.shell
+        || typeof bar.shell.updateEntryInline !== "function") return
+    var values = {}
+    var changed = false
+    if (!hasSetting("codexProfilesRoot")) {
+      values.codexProfilesRoot = String(setting("profilesRoot", "~/.codex-profiles"))
+      changed = true
+    }
+    if (!hasSetting("claudeProfileMode")) {
+      var oldClaudeRoot = hasSetting("claudeProfilesRoot")
+        ? String(settings.claudeProfilesRoot || "~/.claude") : "~/.claude"
+      values.claudeProfileMode = "Single account"
+      values.claudeProfileRoot = oldClaudeRoot
+      values.claudeProfilesRoot = "~/.claude-profiles"
+      changed = true
+    } else {
+      if (!hasSetting("claudeProfileRoot")) {
+        values.claudeProfileRoot = "~/.claude"
+        changed = true
+      }
+      if (!hasSetting("claudeProfilesRoot")) {
+        values.claudeProfilesRoot = "~/.claude-profiles"
+        changed = true
+      }
+    }
+    if (!hasSetting("refreshMode")) {
+      values.refreshMode = "Scheduled"
+      changed = true
+    }
+    if (!hasSetting("hoverCooldownSec")) {
+      values.hoverCooldownSec = 60
+      changed = true
+    }
+    if (!hasSetting("profileNames")) {
+      values.profileNames = {}
+      changed = true
+    }
+    if (changed) {
+      if (persistSettings(values)) settingsMigrationComplete = true
+    } else {
+      settingsMigrationComplete = true
+    }
+  }
+
+  function beginProfileNameEdit(value) {
+    var id = cleanText(value && value.id, "")
+    if (id === "") return
+    editingSettings = false
+    editingProfileId = id
+    draftProfileName = displayProfileName(value)
+  }
+
+  function cancelProfileNameEdit(restoreFocus) {
+    editingProfileId = ""
+    draftProfileName = ""
+    if (restoreFocus !== false)
+      Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function saveProfileName(value) {
+    var id = cleanText(value && value.id, "")
+    if (id === "" || id !== editingProfileId) return
+    var names = {}
+    for (var existing in profileNames) names[existing] = profileNames[existing]
+    var name = cleanText(draftProfileName, "").trim().substring(0, 48)
+    if (name === "" || name === defaultProfileName(value)) delete names[id]
+    else names[id] = name
+    if (persistSettings({ profileNames: names })) cancelProfileNameEdit()
   }
 
   function handleTimeFieldKey(event, otherField) {
@@ -353,7 +496,8 @@ Panel {
     refreshQueuedForce = false
     var arguments = [
       "--codex-profiles-root", codexProfilesRoot,
-      "--claude-profiles-root", claudeProfilesRoot,
+      "--claude-profiles-root", activeClaudeProfilesRoot,
+      "--claude-profile-mode", claudeModeArgument(claudeProfileMode),
       "--json"
     ]
     if (!privacyModeEnabled) arguments.push("--show-identity")
@@ -433,9 +577,10 @@ Panel {
   }
 
   function refreshBehaviorText() {
-    if (refreshMode === "On hover/open") return "Refresh on hover/open · " + hoverCooldownSec + "s cooldown"
-    if (refreshMode === "Both") return "Every " + refreshIntervalText() + " and on hover/open"
-    return "Auto-refresh every " + refreshIntervalText()
+    if (refreshMode === "On hover/open")
+      return "OpenAI refresh on hover/open · " + hoverCooldownSec + "s cooldown"
+    if (refreshMode === "Both") return "OpenAI every " + refreshIntervalText() + " and on hover/open"
+    return "OpenAI auto-refresh every " + refreshIntervalText()
   }
 
   function resetSummary(value) {
@@ -444,7 +589,12 @@ Panel {
     return resets.length + " reset" + (resets.length === 1 ? "" : "s") + " available"
   }
 
-  Component.onCompleted: cacheReadProcess.running = true
+  Component.onCompleted: {
+    Qt.callLater(function() { migrateSettings() })
+    cacheReadProcess.running = true
+  }
+
+  onBarChanged: if (bar) Qt.callLater(function() { migrateSettings() })
 
   Component.onDestruction: {
     if (cacheReadProcess.running) cacheReadProcess.running = false
@@ -458,8 +608,9 @@ Panel {
       nowMs = Date.now()
       hoverRefresh()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-    } else if (editingSettings) {
-      closeSettings(false)
+    } else {
+      if (editingSettings) closeSettings(false)
+      if (editingProfileId !== "") cancelProfileNameEdit(false)
     }
   }
 
@@ -520,7 +671,9 @@ Panel {
       onStreamFinished: {
         var selectedPath = text.trim()
         if (selectedPath === "") return
-        var target = root.folderPickerTarget === "claude" ? claudeProfilesRootField : codexProfilesRootField
+        var target = codexProfilesRootField
+        if (root.folderPickerTarget === "claude-single") target = claudeProfileRootField
+        else if (root.folderPickerTarget === "claude-multiple") target = claudeProfilesRootField
         target.text = selectedPath
         target.selectAll()
         target.forceActiveFocus()
@@ -588,7 +741,7 @@ Panel {
     text: "󱚣"
     active: root.alarming
     tooltipText: root.sleepModeActive && root.refreshOnSchedule
-      ? "AI usage · Scheduled checks paused · " + root.lastFetchText()
+      ? "AI usage · OpenAI checks paused · " + root.lastFetchText()
       : "AI usage · " + root.lastFetchText()
     onTooltipHoveredChanged: if (tooltipHovered) root.hoverRefresh()
     onPressed: function(buttonCode) {
@@ -610,7 +763,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingSettings
+      blocked: root.editingSettings || root.editingProfileId !== ""
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.selectTab(root.selectedTabIndex + dx)
         if (dy !== 0)
@@ -658,7 +811,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: root.summaryView
                   ? "AI usage"
-                  : String(root.account.label || root.account.id || "Codex")
+                  : root.displayProfileName(root.account)
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -710,10 +863,27 @@ Panel {
               anchors.margins: Style.space(11)
               spacing: Style.space(10)
 
-              PanelSectionHeader {
-                text: "OPENAI / CODEX"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
+              Row {
+                width: parent.width
+                spacing: Style.space(6)
+
+                PanelSectionHeader {
+                  width: Math.max(0, parent.width - openAiHelpButton.width - parent.spacing)
+                  text: "OPENAI SETTINGS"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                PanelActionButton {
+                  id: openAiHelpButton
+                  iconText: "?"
+                  tooltipText: "OpenAI reads Codex auth.json profiles. API usage can refresh on hover/open, on a schedule, or both."
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  size: Style.space(22)
+                  bordered: true
+                }
               }
 
               Row {
@@ -750,30 +920,125 @@ Panel {
                 }
               }
 
-              Text {
+              Dropdown {
+                id: refreshModeField
                 width: parent.width
-                textFormat: Text.PlainText
-                text: "A Codex home or a folder containing Codex homes with auth.json."
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
+                label: "API refresh behavior"
+                value: root.draftRefreshMode
+                options: ["On hover/open", "Scheduled", "Both"]
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                onChanged: function(value) { root.draftRefreshMode = value }
               }
 
-              PanelSectionHeader {
-                text: "CLAUDE"
+              NumberField {
+                id: refreshIntervalField
+                visible: root.draftRefreshMode !== "On hover/open"
+                label: "Schedule interval (minutes)"
+                value: root.draftRefreshIntervalMin
+                from: 1
+                to: 60
+                stepSize: 1
                 foreground: root.foreground
+                accent: Color.accent
                 fontFamily: root.fontFamily
+                onModified: function(value) { root.draftRefreshIntervalMin = value }
+              }
+
+              NumberField {
+                id: hoverCooldownField
+                visible: root.draftRefreshMode !== "Scheduled"
+                label: "Hover cooldown (seconds)"
+                value: root.draftHoverCooldownSec
+                from: 30
+                to: 3600
+                stepSize: 30
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                onModified: function(value) { root.draftHoverCooldownSec = value }
               }
 
               Row {
+                width: parent.width
+                spacing: Style.space(6)
+
+                PanelSectionHeader {
+                  width: Math.max(0, parent.width - claudeHelpButton.width - parent.spacing)
+                  text: "CLAUDE SETTINGS"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+
+                PanelActionButton {
+                  id: claudeHelpButton
+                  iconText: "?"
+                  tooltipText: "Claude usage comes from Claude Code's official status line after you send a message. OpenAI refresh settings do not request Claude usage."
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  size: Style.space(22)
+                  bordered: true
+                }
+              }
+
+              Dropdown {
+                id: claudeProfileModeField
+                width: parent.width
+                label: "Account setup"
+                value: root.draftClaudeProfileMode
+                options: ["Single account", "Multiple accounts"]
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                onChanged: function(value) { root.draftClaudeProfileMode = value }
+              }
+
+              Row {
+                visible: root.draftClaudeProfileMode === "Single account"
+                width: parent.width
+                spacing: Style.space(8)
+
+                TextField {
+                  id: claudeProfileRootField
+                  width: Math.max(0, parent.width - browseClaudeProfileButton.width - parent.spacing)
+                  placeholderText: "~/.claude"
+                  foreground: root.foreground
+                  accent: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  onTextChanged: root.draftClaudeProfileRoot = text
+                  onAccepted: root.saveSettings()
+                  Keys.onPressed: function(event) { root.handleTimeFieldKey(event, codexProfilesRootField) }
+                }
+
+                Button {
+                  id: browseClaudeProfileButton
+                  width: claudeProfileRootField.implicitHeight
+                  height: claudeProfileRootField.implicitHeight
+                  iconText: "󰉋"
+                  tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
+                  bordered: true
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  iconSize: Style.font.icon
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  enabled: !folderPickerProcess.running
+                  onClicked: root.browseProfilesRoot("claude-single")
+                }
+              }
+
+              Row {
+                visible: root.draftClaudeProfileMode === "Multiple accounts"
                 width: parent.width
                 spacing: Style.space(8)
 
                 TextField {
                   id: claudeProfilesRootField
                   width: Math.max(0, parent.width - browseClaudeProfilesButton.width - parent.spacing)
-                  placeholderText: "~/.claude"
+                  placeholderText: "~/.claude-profiles"
                   foreground: root.foreground
                   accent: Color.accent
                   font.family: root.fontFamily
@@ -796,18 +1061,8 @@ Panel {
                   horizontalPadding: 0
                   verticalPadding: 0
                   enabled: !folderPickerProcess.running
-                  onClicked: root.browseProfilesRoot("claude")
+                  onClicked: root.browseProfilesRoot("claude-multiple")
                 }
-              }
-
-              Text {
-                width: parent.width
-                textFormat: Text.PlainText
-                text: "A Claude config home or a folder containing CLAUDE_CONFIG_DIR homes."
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
               }
 
               Button {
@@ -835,38 +1090,6 @@ Panel {
               }
 
               PanelSectionHeader {
-                text: "REFRESH"
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-              }
-
-              Dropdown {
-                id: refreshModeField
-                width: parent.width
-                showLabel: false
-                value: root.draftRefreshMode
-                options: ["On hover/open", "Scheduled", "Both"]
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                onChanged: function(value) { root.draftRefreshMode = value }
-              }
-
-              NumberField {
-                id: hoverCooldownField
-                visible: root.draftRefreshMode !== "Scheduled"
-                label: "Hover cooldown (seconds)"
-                value: root.draftHoverCooldownSec
-                from: 30
-                to: 3600
-                stepSize: 30
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                onModified: function(value) { root.draftHoverCooldownSec = value }
-              }
-
-              PanelSectionHeader {
                 text: "PRIVACY"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
@@ -891,8 +1114,8 @@ Panel {
 
               Toggle {
                 width: parent.width
-                label: "Pause automatic checks"
-                description: "Manual refreshes always remain available."
+                label: "Pause scheduled OpenAI checks"
+                description: "Hover/open and manual refreshes remain available."
                 foreground: root.foreground
                 accent: Color.accent
                 fontFamily: root.fontFamily
@@ -1039,7 +1262,7 @@ Panel {
                 required property int index
                 width: viewSwitch.accountWidth
                 height: viewSwitch.tabHeight
-                text: String(modelData.label || modelData.id || "Codex")
+                text: root.displayProfileName(modelData)
                 tooltipText: String(modelData.providerLabel || "AI") + " · " + text
                 selected: index + 1 === root.selectedTabIndex
                 bordered: true
@@ -1083,7 +1306,7 @@ Panel {
                 Text {
                   width: parent.width
                   textFormat: Text.PlainText
-                  text: "Sleep mode · not fetching"
+                  text: "Sleep mode · OpenAI checks paused"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
@@ -1093,7 +1316,7 @@ Panel {
                 Text {
                   width: parent.width
                   textFormat: Text.PlainText
-                  text: "Automatic checks paused " + root.clockText(root.sleepStartMinute)
+                  text: "Scheduled OpenAI checks paused " + root.clockText(root.sleepStartMinute)
                     + " to " + root.clockText(root.sleepEndMinute) + " · Manual refresh still works"
                   color: root.dim
                   font.family: root.fontFamily
@@ -1144,8 +1367,10 @@ Panel {
             model: root.summaryView ? root.accounts : []
 
             BorderSurface {
+              id: summaryCard
               required property var modelData
               readonly property var summaryLimit: root.preferredLimit(modelData)
+              readonly property bool editingName: root.editingProfileId === root.cleanText(modelData.id, "")
               width: contentColumn.width
               implicitHeight: summaryColumn.implicitHeight + Style.space(20)
               color: root.alpha(root.foreground, 0.035)
@@ -1162,17 +1387,90 @@ Panel {
 
                 Row {
                   width: parent.width
+                  spacing: Style.space(6)
 
                   Text {
+                    visible: !summaryCard.editingName
+                    width: visible ? Math.min(implicitWidth, Style.space(210)) : 0
                     textFormat: Text.PlainText
-                    text: String(modelData.label || modelData.id || "Codex")
+                    text: root.displayProfileName(modelData)
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
                     font.bold: true
+                    elide: Text.ElideRight
                   }
 
-                  Item { width: Math.max(0, parent.width - x - summaryPercent.width); height: 1 }
+                  TextField {
+                    id: profileNameField
+                    visible: summaryCard.editingName
+                    width: visible ? Math.min(Style.space(210), Math.max(Style.space(100),
+                      parent.width - summaryPercent.width - saveProfileNameButton.width
+                        - cancelProfileNameButton.width - parent.spacing * 4)) : 0
+                    text: root.draftProfileName
+                    placeholderText: root.defaultProfileName(modelData)
+                    maximumLength: 48
+                    foreground: root.foreground
+                    accent: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    onTextEdited: root.draftProfileName = text
+                    onAccepted: root.saveProfileName(modelData)
+                    onVisibleChanged: if (visible) Qt.callLater(function() {
+                      selectAll()
+                      forceActiveFocus()
+                    })
+                    Keys.onPressed: function(event) {
+                      if (event.key === Qt.Key_Escape) {
+                        root.cancelProfileNameEdit()
+                        event.accepted = true
+                      }
+                    }
+                  }
+
+                  PanelActionButton {
+                    id: editProfileNameButton
+                    visible: !summaryCard.editingName && root.editingProfileId === ""
+                    iconText: "󰏫"
+                    tooltipText: "Rename " + root.displayProfileName(modelData)
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    size: visible ? Style.space(22) : 0
+                    bordered: true
+                    onClicked: root.beginProfileNameEdit(modelData)
+                  }
+
+                  PanelActionButton {
+                    id: saveProfileNameButton
+                    visible: summaryCard.editingName
+                    iconText: "󰄬"
+                    tooltipText: "Save profile name"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    size: visible ? Style.space(22) : 0
+                    bordered: true
+                    onClicked: root.saveProfileName(modelData)
+                  }
+
+                  PanelActionButton {
+                    id: cancelProfileNameButton
+                    visible: summaryCard.editingName
+                    iconText: "󰅖"
+                    tooltipText: "Cancel"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    size: visible ? Style.space(22) : 0
+                    bordered: true
+                    onClicked: root.cancelProfileNameEdit()
+                  }
+
+                  Item {
+                    width: Math.max(0, parent.width - x - summaryPercent.width - parent.spacing)
+                    height: 1
+                  }
 
                   Text {
                     id: summaryPercent
@@ -1445,7 +1743,7 @@ Panel {
                 width: parent.width
                 textFormat: Text.PlainText
                 text: root.sleepModeActive && root.refreshOnSchedule
-                  ? "Automatic checks paused until " + root.clockText(root.sleepEndMinute)
+                  ? "OpenAI checks paused until " + root.clockText(root.sleepEndMinute)
                   : root.refreshBehaviorText()
                 color: root.dim
                 opacity: 0.75

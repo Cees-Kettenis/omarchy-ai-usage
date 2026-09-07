@@ -11,12 +11,10 @@ collector for a validated JSON snapshot and renders the bar popup.
 
 ## Fetching usage
 
-The collector scans separate Codex and Claude locations. A location may be one
-profile home or a parent folder whose immediate subfolders are profile homes.
-Codex profiles are identified only by `auth.json`; Claude profiles are
-identified only by `.credentials.json`. This keeps one provider's profile from
-being passed to the other provider's CLI. Symlinked profile folders and
-credential files are ignored or rejected.
+The collector scans separate OpenAI and Claude locations. Codex profiles use
+`auth.json`; Claude profiles use `.credentials.json`. A directory containing
+both markers is ambiguous, so the collector ignores it for both providers.
+Symlinked profile folders and credential files are ignored or rejected.
 
 ### Codex profiles
 
@@ -38,9 +36,10 @@ path.
 
 ### Claude profiles
 
-Claude Code keeps one account in each config home. Its documented
-`CLAUDE_CONFIG_DIR` setting makes multiple accounts possible by placing each
-one in a separate directory:
+Claude defaults to single-account mode and uses `~/.claude` directly. Claude
+Code keeps one account in each config home. Its documented `CLAUDE_CONFIG_DIR`
+setting makes multiple accounts possible by placing each one in a separate
+directory:
 
 ```text
 ~/.claude-profiles/
@@ -57,11 +56,13 @@ CLAUDE_CONFIG_DIR=~/.claude-profiles/personal claude auth login
 CLAUDE_CONFIG_DIR=~/.claude-profiles/work claude auth login
 ```
 
-Choose `~/.claude-profiles` as **Claude location**. During refresh the
-collector runs the documented `claude auth status` command once per profile
-with the exact `CLAUDE_CONFIG_DIR`. It removes inherited Anthropic credential
-and endpoint overrides first, so an environment variable cannot silently
-select a different account or provider.
+Choose **Multiple accounts**, then choose `~/.claude-profiles` as the parent
+location. Multiple-account mode scans immediate subfolders only; single mode
+checks only the configured home. During refresh the collector runs the
+documented `claude auth status` command once per profile with the exact
+`CLAUDE_CONFIG_DIR`. It removes inherited Anthropic credential and endpoint
+overrides first, so an environment variable cannot silently select a different
+account or provider.
 
 Claude Code does not expose subscription usage through a documented
 non-interactive usage command. Instead, its documented status-line interface
@@ -113,6 +114,10 @@ Selecting a profile shows all of its limits, reset times, credit balance, and
 rate-limit resets. The popup shows when the last fetch finished. Claude
 profiles also show when Claude Code last emitted their usage snapshot.
 
+Profile names normally come from their folders. The pencil beside each summary
+name edits that profile only. Saved names apply to the summary, profile
+switcher, and profile heading without renaming folders or changing credentials.
+
 ## Settings
 
 Open the popup and select the gear button.
@@ -123,28 +128,31 @@ Open the popup and select the gear button.
 
 The settings panel controls:
 
-- Codex location and Claude location. Keep the provider roots separate.
-- Refresh behavior. Choose hover/open, scheduled, or both. Hover/open uses a
-  configurable cooldown, one minute by default.
+- OpenAI location and API refresh behavior. Choose hover/open, scheduled, or
+  both. The schedule interval and hover cooldown are configurable.
+- Claude account setup, with separate single-account and multiple-account
+  locations. Single account is the default.
 - Hide account details. This is on by default and keeps identity data out of
   the request and cache.
-- Pause automatic checks. Set a local start and end time for the sleep window.
+- Pause scheduled OpenAI checks. Set a local start and end time for the sleep
+  window.
 
-Sleep mode only pauses scheduled checks. The last cached result stays visible,
-and hover/open and manual refreshes still work.
+Sleep mode only pauses scheduled OpenAI checks. The last cached result stays
+visible, and hover/open and manual refreshes still work.
 
 ## Refresh behavior
 
-The widget refreshes every 15 minutes by default. You can instead refresh only
-when the pointer first hovers over the bar icon or the popup opens, or enable
-both behaviors. Hover/open refreshes observe a configurable cooldown, one
-minute by default. On startup the widget asks the collector for the cached
-snapshot. Fetching runs separately and updates the view when it finishes.
+The widget fetches OpenAI usage every 15 minutes by default. You can change the
+interval, fetch only when the pointer first hovers over the bar icon or the
+popup opens, or enable both behaviors. Hover/open fetches observe a
+configurable cooldown, one minute by default. On startup the widget asks the
+collector for the cached snapshot. Fetching runs separately and updates the
+view when it finishes.
 
-A Claude refresh checks sign-in state through Claude Code and reads the most
-recent locally captured usage snapshot. It does not make a model request just
-to update the bar; Claude usage changes after Claude Code itself emits new
-status-line data.
+These settings control OpenAI API requests. Claude usage only changes after
+Claude Code emits new data through its official status line following a
+message. When the collector runs, it checks Claude sign-in state and reads the
+latest local snapshot. It never makes a model request just to update the bar.
 
 Use the refresh button, right-click the bar icon, or press `r` or Enter to
 fetch immediately.
@@ -176,7 +184,8 @@ Use other profile locations for one run:
 ```bash
 ~/.config/omarchy/plugins/ai-usage/collector.py \
   --codex-profiles-root /path/to/codex-profiles \
-  --claude-profiles-root /path/to/claude-profiles \
+  --claude-profiles-root /path/to/one-claude-home \
+  --claude-profile-mode single \
   --force \
   --print
 ```
@@ -186,6 +195,7 @@ Enable Claude capture for every Claude profile under a location:
 ```bash
 ~/.config/omarchy/plugins/ai-usage/collector.py \
   --claude-profiles-root /path/to/claude-profiles \
+  --claude-profile-mode multiple \
   --install-claude-bridge
 ```
 

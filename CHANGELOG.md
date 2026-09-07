@@ -10,13 +10,19 @@
 - Added opt-in Claude usage capture through Claude Code's documented status
   line for five-hour, seven-day, and gateway spend-limit windows.
 - Added separate Codex and Claude profile locations.
-- Added configurable hover/open, scheduled, and combined refresh modes with a
-  one-minute default hover cooldown.
+- Added explicit single-account and multiple-account Claude modes, with single
+  account at `~/.claude` as the default.
+- Added per-profile name editing shared by the summary, profile switcher, and
+  profile heading.
+- Added configurable OpenAI hover/open, scheduled, and combined refresh modes
+  with a one-minute default hover cooldown and configurable schedule interval.
 
 ### Security
 
 - Kept provider discovery separate by credential marker without reading
   Claude credential contents.
+- Ignored ambiguous directories containing both Codex and Claude credential
+  markers.
 - Removed inherited Anthropic credentials and endpoint overrides from each
   Claude probe, and refused to overwrite existing custom status lines.
 - Stored only bounded, display-safe Claude limit data in owner-only cache

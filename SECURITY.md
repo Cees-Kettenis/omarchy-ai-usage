@@ -10,6 +10,11 @@ be accessible to another user. It identifies providers by their distinct
 marker files, then starts the matching verified CLI with that folder as
 `CODEX_HOME` or `CLAUDE_CONFIG_DIR`.
 
+If one directory contains both provider markers, the collector ignores it for
+both providers. Single-account Claude discovery never scans children, while
+multiple-account discovery only scans immediate children of its configured
+parent.
+
 Claude account discovery uses the documented `claude auth status` command.
 Subscription usage is received through Claude Code's documented local status
 line, not an undocumented Anthropic endpoint. The bridge keeps only usage

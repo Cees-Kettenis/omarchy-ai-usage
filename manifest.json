@@ -27,9 +27,12 @@
     "defaults": {
       "refreshIntervalSec": 900,
       "codexProfilesRoot": "~/.codex-profiles",
-      "claudeProfilesRoot": "~/.claude",
+      "claudeProfileMode": "Single account",
+      "claudeProfileRoot": "~/.claude",
+      "claudeProfilesRoot": "~/.claude-profiles",
       "refreshMode": "Scheduled",
       "hoverCooldownSec": 60,
+      "profileNames": {},
       "privacyMode": "On",
       "sleepMode": "Off",
       "sleepStart": "17:00",
@@ -39,38 +42,56 @@
       {
         "key": "codexProfilesRoot",
         "type": "string",
-        "label": "OpenAI / Codex profiles folder",
+        "label": "OpenAI profiles folder",
         "defaultValue": "~/.codex-profiles",
         "description": "A Codex home or a folder whose immediate subfolders contain Codex auth.json files."
       },
       {
+        "key": "claudeProfileMode",
+        "type": "enum",
+        "label": "Claude account setup",
+        "options": [
+          "Single account",
+          "Multiple accounts"
+        ],
+        "defaultValue": "Single account",
+        "description": "Use ~/.claude directly or scan a parent folder containing separate Claude config homes."
+      },
+      {
+        "key": "claudeProfileRoot",
+        "type": "string",
+        "label": "Claude single-account location",
+        "defaultValue": "~/.claude",
+        "description": "The CLAUDE_CONFIG_DIR home for one Claude account."
+      },
+      {
         "key": "claudeProfilesRoot",
         "type": "string",
-        "label": "Claude profiles folder",
-        "defaultValue": "~/.claude",
-        "description": "A Claude config home or a folder whose immediate subfolders are separate CLAUDE_CONFIG_DIR homes."
+        "label": "Claude multiple-account location",
+        "defaultValue": "~/.claude-profiles",
+        "description": "A parent folder whose immediate subfolders are separate CLAUDE_CONFIG_DIR homes."
       },
       {
         "key": "refreshMode",
         "type": "enum",
-        "label": "Refresh mode",
+        "label": "OpenAI refresh mode",
         "options": [
           "On hover/open",
           "Scheduled",
           "Both"
         ],
         "defaultValue": "Scheduled",
-        "description": "Fetch on interaction, on the configured schedule, or both."
+        "description": "Fetch OpenAI API usage on interaction, on the configured schedule, or both. Claude usage arrives through Claude Code's status line."
       },
       {
         "key": "hoverCooldownSec",
         "type": "integer",
-        "label": "Hover cooldown (seconds)",
+        "label": "OpenAI hover cooldown (seconds)",
         "min": 30,
         "max": 3600,
         "step": 30,
         "defaultValue": 60,
-        "description": "Minimum time between hover-triggered refreshes."
+        "description": "Minimum time between hover-triggered OpenAI API refreshes."
       },
       {
         "key": "privacyMode",
@@ -86,11 +107,12 @@
       {
         "key": "refreshIntervalSec",
         "type": "integer",
-        "label": "Refresh interval (seconds)",
+        "label": "OpenAI refresh interval (seconds)",
         "min": 30,
         "max": 3600,
         "step": 30,
-        "defaultValue": 900
+        "defaultValue": 900,
+        "description": "Interval between scheduled OpenAI API refreshes."
       },
       {
         "key": "sleepMode",
@@ -101,7 +123,7 @@
           "On"
         ],
         "defaultValue": "Off",
-        "description": "Pause automatic usage checks during the configured sleep window."
+        "description": "Pause scheduled OpenAI usage checks during the configured sleep window."
       },
       {
         "key": "sleepStart",
