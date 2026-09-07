@@ -6,14 +6,15 @@ Run both checks before committing:
 
 ```bash
 omarchy plugin validate .
-/usr/bin/python3 -m py_compile collector.py folder_picker.py
+/usr/bin/python3 -m py_compile collector.py claude_statusline.py folder_picker.py
 /usr/bin/python3 -m unittest discover -s tests -v
 ```
 
 The Omarchy validator checks the manifest, plugin ID, entry points, declared
 kinds, and repository layout. Python compilation catches syntax errors in the
-collector and folder picker. The unit tests cover the collector's path,
-permission, process, transport, and payload boundaries.
+collector, Claude status-line bridge, and folder picker. The unit tests cover
+path, permission, provider separation, process, transport, and payload
+boundaries.
 
 Saving a file through the installed plugin path reloads the plugin in the
 running Omarchy shell. If it does not reload, run:

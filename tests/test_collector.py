@@ -129,9 +129,49 @@ class ProfileSecurityTests(unittest.TestCase):
             root = Path(temporary)
             real = root / "real"
             real.mkdir(mode=0o700)
+            auth = real / "auth.json"
+            auth.write_text("{}", encoding="utf-8")
+            auth.chmod(0o600)
             os.symlink(real, root / "linked")
 
             self.assertEqual(collector.discover_profiles(root), [real])
+
+    def test_provider_markers_keep_profiles_separate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            codex = root / "codex-account"
+            claude = root / "claude-account"
+            codex.mkdir(mode=0o700)
+            claude.mkdir(mode=0o700)
+            (codex / "auth.json").write_text("{}", encoding="utf-8")
+            (claude / ".credentials.json").write_text("{}", encoding="utf-8")
+
+            self.assertEqual(collector.discover_profiles(root), [codex])
+            self.assertEqual(collector.discover_claude_profiles(root), [claude])
+
+    def test_direct_claude_home_is_discovered(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            credentials = profile / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+
+            self.assertEqual(collector.discover_claude_profiles(profile), [profile])
+
+    def test_multiple_claude_config_homes_are_discovered(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("personal", "work"):
+                profile = root / name
+                profile.mkdir(mode=0o700)
+                credentials = profile / ".credentials.json"
+                credentials.write_text("{}", encoding="utf-8")
+                credentials.chmod(0o600)
+
+            self.assertEqual(
+                collector.discover_claude_profiles(root),
+                [root / "personal", root / "work"],
+            )
 
 
 class ProcessSecurityTests(unittest.TestCase):
@@ -157,6 +197,64 @@ class ProcessSecurityTests(unittest.TestCase):
             self.assertNotIn(key, env)
         self.assertEqual(env["CODEX_HOME"], "/profiles/one")
         self.assertTrue(env["PATH"].startswith("/trusted/bin:"))
+
+    def test_claude_environment_selects_one_profile_and_removes_overrides(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "wrong-account",
+                "ANTHROPIC_BASE_URL": "https://example.invalid",
+                "CLAUDE_CODE_OAUTH_TOKEN": "wrong-account",
+                "CLAUDE_CONFIG_DIR": "/wrong/profile",
+            },
+        ):
+            env = collector.claude_runtime_environment(
+                Path("/profiles/claude-one"), Path("/trusted/bin/claude")
+            )
+        self.assertEqual(env["CLAUDE_CONFIG_DIR"], "/profiles/claude-one")
+        self.assertNotIn("ANTHROPIC_API_KEY", env)
+        self.assertNotIn("ANTHROPIC_BASE_URL", env)
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", env)
+
+    def test_claude_probe_uses_official_auth_status_and_local_snapshot(self) -> None:
+        process = mock.Mock()
+        process.pid = 12345
+        profile = Path("/profiles/claude-one")
+        command = Path("/trusted/bin/claude")
+        with (
+            mock.patch.object(collector, "validate_claude_profile"),
+            mock.patch.object(collector.subprocess, "Popen", return_value=process) as popen,
+            mock.patch.object(
+                collector,
+                "_bounded_process_output",
+                return_value=json.dumps(
+                    {
+                        "loggedIn": True,
+                        "email": "person@example.com",
+                        "subscriptionType": "pro",
+                    }
+                ).encode(),
+            ),
+            mock.patch.object(
+                collector,
+                "read_claude_status",
+                return_value={
+                    "capturedAtMs": 123,
+                    "limits": [{"name": "5 hour", "usedPercent": 25}],
+                },
+            ),
+            mock.patch.object(collector, "terminate_process_group"),
+        ):
+            account = collector.probe_claude_profile(
+                profile, command, True, time.monotonic() + 5
+            )
+
+        self.assertEqual(popen.call_args.args[0], [str(command), "auth", "status"])
+        self.assertEqual(popen.call_args.kwargs["env"]["CLAUDE_CONFIG_DIR"], str(profile))
+        self.assertEqual(account["provider"], "claude")
+        self.assertEqual(account["email"], "person@example.com")
+        self.assertEqual(account["plan"], "Pro")
+        self.assertEqual(account["limits"][0]["name"], "5 hour")
 
     def test_rpc_reads_partial_binary_output(self) -> None:
         program = """
@@ -257,7 +355,7 @@ class PayloadTests(unittest.TestCase):
             {"schemaVersion": 1, "accounts": [account] * 100, "error": ""}
         )
 
-        self.assertEqual(len(payload["accounts"]), collector.MAX_PROFILES)
+        self.assertEqual(len(payload["accounts"]), collector.MAX_ACCOUNTS)
         self.assertEqual(len(payload["accounts"][0]["limits"]), collector.MAX_LIMITS)
         self.assertEqual(len(payload["accounts"][0]["resets"]), collector.MAX_RESETS)
         self.assertEqual(len(payload["accounts"][0]["id"]), collector.MAX_TEXT_LENGTH)
@@ -278,6 +376,129 @@ class PayloadTests(unittest.TestCase):
     def test_profile_path_length_is_bounded(self) -> None:
         with self.assertRaises(ValueError):
             collector.resolve_profile_root("/" + "x" * collector.MAX_PATH_LENGTH)
+
+    def test_claude_statusline_uses_documented_rate_limit_fields(self) -> None:
+        profile = Path("/profiles/claude-one")
+        snapshot = collector.normalize_claude_statusline(
+            {
+                "rate_limits": {
+                    "five_hour": {"used_percentage": 23.5, "resets_at": 1000},
+                    "seven_day": {"used_percentage": 41.2, "resets_at": 2000},
+                },
+                "transcript_path": "/private/conversation.jsonl",
+            },
+            profile,
+        )
+
+        self.assertEqual([entry["name"] for entry in snapshot["limits"]], ["5 hour", "Weekly"])
+        self.assertEqual(snapshot["limits"][0]["remainingPercent"], 76)
+        self.assertNotIn("transcript_path", snapshot)
+
+    def test_claude_statusline_cache_is_private_and_profile_scoped(self) -> None:
+        with temporary_cache() as (_, root):
+            profile = Path("/profiles/claude-one")
+            collector.capture_claude_statusline(
+                {
+                    "rate_limits": {
+                        "five_hour": {
+                            "used_percentage": 25,
+                            "resets_at": int(time.time()) + 3600,
+                        }
+                    }
+                },
+                profile,
+            )
+
+            snapshot = collector.read_claude_status(profile)
+            self.assertIsNotNone(snapshot)
+            assert snapshot is not None
+            self.assertEqual(snapshot["limits"][0]["remainingPercent"], 75)
+            cache_file = root / collector._claude_status_name(profile)
+            self.assertEqual(stat.S_IMODE(cache_file.stat().st_mode), 0o600)
+
+    def test_expired_claude_windows_are_not_reused(self) -> None:
+        with temporary_cache():
+            profile = Path("/profiles/claude-one")
+            collector.capture_claude_statusline(
+                {"rate_limits": {"five_hour": {"used_percentage": 99, "resets_at": 1}}},
+                profile,
+            )
+
+            snapshot = collector.read_claude_status(profile)
+            self.assertIsNotNone(snapshot)
+            assert snapshot is not None
+            self.assertEqual(snapshot["limits"], [])
+
+    def test_statusline_bridge_runs_in_isolated_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = os.environ.copy()
+            environment["XDG_CACHE_HOME"] = temporary
+            environment["CLAUDE_CONFIG_DIR"] = "/profiles/claude-one"
+            payload = json.dumps(
+                {
+                    "rate_limits": {
+                        "five_hour": {
+                            "used_percentage": 12.5,
+                            "resets_at": int(time.time()) + 3600,
+                        }
+                    },
+                    "transcript_path": "/private/transcript.jsonl",
+                }
+            )
+
+            completed = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    str(Path(collector.__file__).with_name("claude_statusline.py")),
+                ],
+                input=payload,
+                text=True,
+                capture_output=True,
+                env=environment,
+                timeout=5,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("Claude · 5h 12%", completed.stdout)
+            snapshots = list((Path(temporary) / "omarchy" / collector.PLUGIN_ID).glob("*.json"))
+            self.assertEqual(len(snapshots), 1)
+            self.assertNotIn("transcript", snapshots[0].read_text(encoding="utf-8"))
+
+    def test_bridge_install_refuses_to_replace_custom_statusline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            credentials = profile / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+            settings = profile / "settings.json"
+            settings.write_text(
+                json.dumps({"statusLine": {"type": "command", "command": "my-status"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "already has a custom Claude status line"):
+                collector.install_claude_bridge(profile)
+            self.assertEqual(json.loads(settings.read_text())["statusLine"]["command"], "my-status")
+
+    def test_bridge_install_preserves_other_user_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            credentials = profile / ".credentials.json"
+            credentials.write_text("{}", encoding="utf-8")
+            credentials.chmod(0o600)
+            settings = profile / "settings.json"
+            settings.write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+
+            message = collector.install_claude_bridge(profile)
+            installed = json.loads(settings.read_text(encoding="utf-8"))
+
+            self.assertEqual(installed["theme"], "dark")
+            self.assertEqual(installed["statusLine"]["type"], "command")
+            self.assertIn("claude_statusline.py", installed["statusLine"]["command"])
+            self.assertIn("make a Claude Code request", message)
+            self.assertEqual(stat.S_IMODE(settings.stat().st_mode), 0o600)
 
 
 if __name__ == "__main__":

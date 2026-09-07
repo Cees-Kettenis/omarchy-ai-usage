@@ -31,14 +31,27 @@ Panel {
   property double nowMs: Date.now()
   property bool refreshQueued: false
   property bool refreshQueuedForce: false
+  property double lastHoverRefreshMs: 0
   property bool editingSettings: false
   property bool draftPrivacyModeEnabled: true
   property bool draftSleepModeEnabled: true
-  property string draftProfilesRoot: "~/.codex-profiles"
+  property string draftCodexProfilesRoot: "~/.codex-profiles"
+  property string draftClaudeProfilesRoot: "~/.claude"
+  property string draftRefreshMode: "Scheduled"
+  property int draftHoverCooldownSec: 60
+  property string folderPickerTarget: "codex"
   property string settingsError: ""
+  property string bridgeMessage: ""
 
   readonly property int refreshIntervalSec: Math.max(30, Number(setting("refreshIntervalSec", 900)))
-  readonly property string profilesRoot: String(setting("profilesRoot", "~/.codex-profiles") || "~/.codex-profiles").trim()
+  readonly property string codexProfilesRoot: String(
+    setting("codexProfilesRoot", setting("profilesRoot", "~/.codex-profiles")) || "~/.codex-profiles"
+  ).trim()
+  readonly property string claudeProfilesRoot: String(setting("claudeProfilesRoot", "~/.claude") || "~/.claude").trim()
+  readonly property string refreshMode: String(setting("refreshMode", "Scheduled") || "Scheduled")
+  readonly property int hoverCooldownSec: Math.max(30, Number(setting("hoverCooldownSec", 60)))
+  readonly property bool refreshOnHover: refreshMode === "On hover/open" || refreshMode === "Both"
+  readonly property bool refreshOnSchedule: refreshMode === "Scheduled" || refreshMode === "Both"
   readonly property bool privacyModeEnabled: switchEnabled(setting("privacyMode", "On"))
   readonly property bool sleepModeEnabled: switchEnabled(setting("sleepMode", "Off"))
   readonly property int sleepStartMinute: clockMinutes(setting("sleepStart", "17:00"), 17 * 60)
@@ -105,15 +118,31 @@ Panel {
     return path
   }
 
-  function browseProfilesRoot() {
+  function browseProfilesRoot(target) {
     if (folderPickerProcess.running) return
+    folderPickerTarget = target
+    var currentPath = target === "claude"
+      ? (claudeProfilesRootField.text || claudeProfilesRoot)
+      : (codexProfilesRootField.text || codexProfilesRoot)
     folderPickerProcess.command = [
       "/usr/bin/python3",
       "-I",
       folderPickerPath,
-      expandedProfilesPath(profilesRootField.text || profilesRoot)
+      expandedProfilesPath(currentPath)
     ]
     folderPickerProcess.running = true
+  }
+
+  function installClaudeBridge() {
+    if (claudeBridgeProcess.running) return
+    bridgeMessage = ""
+    settingsError = ""
+    var profileRoot = String(claudeProfilesRootField.text || claudeProfilesRoot).trim()
+    claudeBridgeProcess.command = collectorCommand([
+      "--claude-profiles-root", profileRoot,
+      "--install-claude-bridge"
+    ], "15s")
+    claudeBridgeProcess.running = true
   }
 
   function sleepModeAt(milliseconds) {
@@ -142,21 +171,29 @@ Panel {
   function openSettings() {
     draftPrivacyModeEnabled = privacyModeEnabled
     draftSleepModeEnabled = sleepModeEnabled
-    draftProfilesRoot = profilesRoot
+    draftCodexProfilesRoot = codexProfilesRoot
+    draftClaudeProfilesRoot = claudeProfilesRoot
+    draftRefreshMode = refreshMode
+    draftHoverCooldownSec = hoverCooldownSec
     settingsError = ""
+    bridgeMessage = ""
     editingSettings = true
     Qt.callLater(function() {
-      profilesRootField.text = profilesRoot
+      codexProfilesRootField.text = codexProfilesRoot
+      claudeProfilesRootField.text = claudeProfilesRoot
+      refreshModeField.value = refreshMode
+      hoverCooldownField.value = hoverCooldownSec
       sleepStartField.text = clockText(sleepStartMinute)
       sleepEndField.text = clockText(sleepEndMinute)
-      profilesRootField.selectAll()
-      profilesRootField.forceActiveFocus()
+      codexProfilesRootField.selectAll()
+      codexProfilesRootField.forceActiveFocus()
     })
   }
 
   function closeSettings(restoreFocus) {
     editingSettings = false
     settingsError = ""
+    bridgeMessage = ""
     if (restoreFocus !== false)
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -167,18 +204,21 @@ Panel {
   }
 
   function saveSettings() {
-    var profileRoot = String(profilesRootField.text || "").trim()
+    var codexRoot = String(codexProfilesRootField.text || "").trim()
+    var claudeRoot = String(claudeProfilesRootField.text || "").trim()
     var start = clockMinutes(sleepStartField.text, -1)
     var end = clockMinutes(sleepEndField.text, -1)
-    if (profileRoot === "") {
-      settingsError = "Choose a folder containing your Codex profile folders"
+    if (codexRoot === "" || claudeRoot === "") {
+      settingsError = "Choose both the Codex and Claude profile locations"
       return
     }
-    if (profileRoot.length > 4096) {
+    if (codexRoot.length > 4096 || claudeRoot.length > 4096) {
       settingsError = "Profiles folder path is too long"
       return
     }
-    if (profileRoot.charAt(0) !== "/" && profileRoot !== "~" && !profileRoot.startsWith("~/")) {
+    var codexPathValid = codexRoot.charAt(0) === "/" || codexRoot === "~" || codexRoot.startsWith("~/")
+    var claudePathValid = claudeRoot.charAt(0) === "/" || claudeRoot === "~" || claudeRoot.startsWith("~/")
+    if (!codexPathValid || !claudePathValid) {
       settingsError = "Use an absolute path or a path starting with ~/"
       return
     }
@@ -190,10 +230,13 @@ Panel {
       settingsError = "Start and end times must be different"
       return
     }
-    var profileRootChanged = profileRoot !== profilesRoot
+    var profileRootChanged = codexRoot !== codexProfilesRoot || claudeRoot !== claudeProfilesRoot
     var privacyModeChanged = draftPrivacyModeEnabled !== privacyModeEnabled
     if (persistSettings({
-      profilesRoot: profileRoot,
+      codexProfilesRoot: codexRoot,
+      claudeProfilesRoot: claudeRoot,
+      refreshMode: draftRefreshMode,
+      hoverCooldownSec: draftHoverCooldownSec,
       privacyMode: draftPrivacyModeEnabled ? "On" : "Off",
       sleepMode: draftSleepModeEnabled ? "On" : "Off",
       sleepStart: clockText(start),
@@ -236,7 +279,7 @@ Panel {
       var parsed = JSON.parse(source)
       if (!parsed || parsed.schemaVersion !== 1 || !Array.isArray(parsed.accounts)) return
       var cleanAccounts = []
-      for (var accountIndex = 0; accountIndex < Math.min(parsed.accounts.length, 32); accountIndex++) {
+      for (var accountIndex = 0; accountIndex < Math.min(parsed.accounts.length, 64); accountIndex++) {
         var account = parsed.accounts[accountIndex]
         if (!account || typeof account !== "object") continue
         var cleanLimits = []
@@ -272,13 +315,16 @@ Panel {
         cleanAccounts.push({
           id: cleanText(account.id, "Codex"),
           label: cleanText(account.label || account.id, "Codex"),
+          provider: cleanText(account.provider, "codex"),
+          providerLabel: cleanText(account.providerLabel, "OpenAI"),
           ready: account.ready === true,
           error: cleanText(account.error, ""),
           limits: cleanLimits,
           credits: credits,
           resets: cleanResets,
           email: cleanText(account.email, ""),
-          plan: cleanText(account.plan, "")
+          plan: cleanText(account.plan, ""),
+          updatedAtMs: epoch(account.updatedAtMs) || 0
         })
       }
       cache = {
@@ -294,10 +340,10 @@ Panel {
     }
   }
 
-  function refreshNow(force) {
+  function refreshNow(force, interactive) {
     var requestedForce = force === true
     nowMs = Date.now()
-    if (!requestedForce && sleepModeAt(nowMs)) return
+    if (!requestedForce && interactive !== true && sleepModeAt(nowMs)) return
     if (refreshProcess.running) {
       refreshQueued = true
       refreshQueuedForce = refreshQueuedForce || requestedForce
@@ -305,11 +351,25 @@ Panel {
     }
     refreshQueued = false
     refreshQueuedForce = false
-    var arguments = ["--profiles-root", profilesRoot, "--json"]
+    var arguments = [
+      "--codex-profiles-root", codexProfilesRoot,
+      "--claude-profiles-root", claudeProfilesRoot,
+      "--json"
+    ]
     if (!privacyModeEnabled) arguments.push("--show-identity")
     if (requestedForce) arguments.push("--force")
     refreshProcess.command = collectorCommand(arguments, "50s")
     refreshProcess.running = true
+  }
+
+  function hoverRefresh() {
+    if (!refreshOnHover || refreshProcess.running) return
+    var current = Date.now()
+    var fetchedAt = Number(cache && cache.fetchedAtMs ? cache.fetchedAtMs : 0)
+    var newest = Math.max(lastHoverRefreshMs, fetchedAt)
+    if (newest > 0 && current - newest < hoverCooldownSec * 1000) return
+    lastHoverRefreshMs = current
+    refreshNow(false, true)
   }
 
   function ageText(milliseconds) {
@@ -362,11 +422,20 @@ Panel {
   }
 
   function accountMeta(value) {
-    if (privacyModeEnabled || !value) return ""
-    var parts = []
-    if (value.email) parts.push(String(value.email))
-    if (value.plan) parts.push(String(value.plan))
+    if (!value) return ""
+    var parts = [String(value.providerLabel || (value.provider === "claude" ? "Claude" : "OpenAI"))]
+    if (!privacyModeEnabled && value.email) parts.push(String(value.email))
+    if (!privacyModeEnabled && value.plan) parts.push(String(value.plan))
+    var updatedAt = Number(value.updatedAtMs || 0)
+    if (value.provider === "claude" && updatedAt > 0)
+      parts.push("usage " + ageText(Math.max(0, nowMs - updatedAt)))
     return parts.join(" · ")
+  }
+
+  function refreshBehaviorText() {
+    if (refreshMode === "On hover/open") return "Refresh on hover/open · " + hoverCooldownSec + "s cooldown"
+    if (refreshMode === "Both") return "Every " + refreshIntervalText() + " and on hover/open"
+    return "Auto-refresh every " + refreshIntervalText()
   }
 
   function resetSummary(value) {
@@ -381,11 +450,13 @@ Panel {
     if (cacheReadProcess.running) cacheReadProcess.running = false
     if (refreshProcess.running) refreshProcess.running = false
     if (folderPickerProcess.running) folderPickerProcess.running = false
+    if (claudeBridgeProcess.running) claudeBridgeProcess.running = false
   }
 
   onOpenedChanged: {
     if (opened) {
       nowMs = Date.now()
+      hoverRefresh()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
     } else if (editingSettings) {
       closeSettings(false)
@@ -394,7 +465,7 @@ Panel {
 
   Timer {
     interval: root.refreshIntervalSec * 1000
-    running: true
+    running: root.refreshOnSchedule
     repeat: true
     triggeredOnStart: true
     onTriggered: root.refreshNow(false)
@@ -415,7 +486,7 @@ Panel {
     onTriggered: {
       var wasSleeping = root.sleepModeActive
       root.nowMs = Date.now()
-      if (wasSleeping && !root.sleepModeAt(root.nowMs)) root.refreshNow(false)
+      if (root.refreshOnSchedule && wasSleeping && !root.sleepModeAt(root.nowMs)) root.refreshNow(false)
     }
   }
 
@@ -449,15 +520,35 @@ Panel {
       onStreamFinished: {
         var selectedPath = text.trim()
         if (selectedPath === "") return
-        profilesRootField.text = selectedPath
-        profilesRootField.selectAll()
-        profilesRootField.forceActiveFocus()
+        var target = root.folderPickerTarget === "claude" ? claudeProfilesRootField : codexProfilesRootField
+        target.text = selectedPath
+        target.selectAll()
+        target.forceActiveFocus()
       }
     }
 
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: if (text.trim() !== "") console.warn("ai-usage folder picker", text.trim())
+    }
+  }
+
+  Process {
+    id: claudeBridgeProcess
+    running: false
+
+    onExited: function(exitCode) {
+      if (exitCode === 0) Qt.callLater(function() { root.refreshNow(true) })
+    }
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.bridgeMessage = text.trim()
+    }
+
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.settingsError = text.trim()
     }
   }
 
@@ -496,9 +587,10 @@ Panel {
     bar: root.bar
     text: "󱚣"
     active: root.alarming
-    tooltipText: root.sleepModeActive
-      ? "AI usage · Sleep mode · not fetching"
+    tooltipText: root.sleepModeActive && root.refreshOnSchedule
+      ? "AI usage · Scheduled checks paused · " + root.lastFetchText()
       : "AI usage · " + root.lastFetchText()
+    onTooltipHoveredChanged: if (tooltipHovered) root.hoverRefresh()
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton || buttonCode === Qt.MiddleButton) root.refreshNow(true)
       else root.toggle()
@@ -577,7 +669,7 @@ Panel {
                 textFormat: Text.PlainText
                 width: parent.width
                 text: root.summaryView
-                  ? "Preferred limit for every profile"
+                  ? "Preferred limit for every provider profile"
                   : root.accountMeta(root.account)
                 visible: text !== ""
                 color: root.dim
@@ -619,7 +711,7 @@ Panel {
               spacing: Style.space(10)
 
               PanelSectionHeader {
-                text: "PROFILES"
+                text: "OPENAI / CODEX"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
               }
@@ -629,22 +721,22 @@ Panel {
                 spacing: Style.space(8)
 
                 TextField {
-                  id: profilesRootField
-                  width: Math.max(0, parent.width - browseProfilesButton.width - parent.spacing)
+                  id: codexProfilesRootField
+                  width: Math.max(0, parent.width - browseCodexProfilesButton.width - parent.spacing)
                   placeholderText: "~/.codex-profiles"
                   foreground: root.foreground
                   accent: Color.accent
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
-                  onTextChanged: root.draftProfilesRoot = text
+                  onTextChanged: root.draftCodexProfilesRoot = text
                   onAccepted: root.saveSettings()
                   Keys.onPressed: function(event) { root.handleTimeFieldKey(event, sleepStartField) }
                 }
 
                 Button {
-                  id: browseProfilesButton
-                  width: profilesRootField.implicitHeight
-                  height: profilesRootField.implicitHeight
+                  id: browseCodexProfilesButton
+                  width: codexProfilesRootField.implicitHeight
+                  height: codexProfilesRootField.implicitHeight
                   iconText: "󰉋"
                   tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
                   bordered: true
@@ -654,18 +746,124 @@ Panel {
                   horizontalPadding: 0
                   verticalPadding: 0
                   enabled: !folderPickerProcess.running
-                  onClicked: root.browseProfilesRoot()
+                  onClicked: root.browseProfilesRoot("codex")
                 }
               }
 
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: "Each immediate subfolder must be a Codex home with auth.json."
+                text: "A Codex home or a folder containing Codex homes with auth.json."
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 wrapMode: Text.WordWrap
+              }
+
+              PanelSectionHeader {
+                text: "CLAUDE"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                TextField {
+                  id: claudeProfilesRootField
+                  width: Math.max(0, parent.width - browseClaudeProfilesButton.width - parent.spacing)
+                  placeholderText: "~/.claude"
+                  foreground: root.foreground
+                  accent: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  onTextChanged: root.draftClaudeProfilesRoot = text
+                  onAccepted: root.saveSettings()
+                  Keys.onPressed: function(event) { root.handleTimeFieldKey(event, codexProfilesRootField) }
+                }
+
+                Button {
+                  id: browseClaudeProfilesButton
+                  width: claudeProfilesRootField.implicitHeight
+                  height: claudeProfilesRootField.implicitHeight
+                  iconText: "󰉋"
+                  tooltipText: folderPickerProcess.running ? "Folder picker open" : "Choose folder"
+                  bordered: true
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  iconSize: Style.font.icon
+                  horizontalPadding: 0
+                  verticalPadding: 0
+                  enabled: !folderPickerProcess.running
+                  onClicked: root.browseProfilesRoot("claude")
+                }
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "A Claude config home or a folder containing CLAUDE_CONFIG_DIR homes."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+
+              Button {
+                width: parent.width
+                text: claudeBridgeProcess.running ? "Enabling…" : "Enable official Claude usage capture"
+                iconText: "󰄬"
+                iconSpinning: claudeBridgeProcess.running
+                enabled: !claudeBridgeProcess.running
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                fontSize: Style.font.caption
+                onClicked: root.installClaudeBridge()
+              }
+
+              Text {
+                visible: root.bridgeMessage !== ""
+                width: parent.width
+                textFormat: Text.PlainText
+                text: root.bridgeMessage
+                color: Color.accent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+
+              PanelSectionHeader {
+                text: "REFRESH"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Dropdown {
+                id: refreshModeField
+                width: parent.width
+                showLabel: false
+                value: root.draftRefreshMode
+                options: ["On hover/open", "Scheduled", "Both"]
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                onChanged: function(value) { root.draftRefreshMode = value }
+              }
+
+              NumberField {
+                id: hoverCooldownField
+                visible: root.draftRefreshMode !== "Scheduled"
+                label: "Hover cooldown (seconds)"
+                value: root.draftHoverCooldownSec
+                from: 30
+                to: 3600
+                stepSize: 30
+                foreground: root.foreground
+                accent: Color.accent
+                fontFamily: root.fontFamily
+                onModified: function(value) { root.draftHoverCooldownSec = value }
               }
 
               PanelSectionHeader {
@@ -842,6 +1040,7 @@ Panel {
                 width: viewSwitch.accountWidth
                 height: viewSwitch.tabHeight
                 text: String(modelData.label || modelData.id || "Codex")
+                tooltipText: String(modelData.providerLabel || "AI") + " · " + text
                 selected: index + 1 === root.selectedTabIndex
                 bordered: true
                 foreground: root.foreground
@@ -854,7 +1053,7 @@ Panel {
           }
 
           BorderSurface {
-            visible: root.sleepModeActive
+            visible: root.sleepModeActive && root.refreshOnSchedule
             width: parent.width
             implicitHeight: sleepModeRow.implicitHeight + Style.space(18)
             color: root.alpha(Color.accent, 0.10)
@@ -923,10 +1122,10 @@ Panel {
               anchors.margins: Style.space(12)
               textFormat: Text.PlainText
               text: root.summaryView
-                ? String(root.cache.error || (refreshProcess.running ? "Fetching Codex usage…" : "No cached usage yet"))
+                ? String(root.cache.error || (refreshProcess.running ? "Fetching AI usage…" : "No cached usage yet"))
                 : root.account
                   ? String(root.account.error || "")
-                  : String(root.cache.error || (refreshProcess.running ? "Fetching Codex usage…" : "No cached usage yet"))
+                  : String(root.cache.error || (refreshProcess.running ? "Fetching AI usage…" : "No cached usage yet"))
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -1009,7 +1208,7 @@ Panel {
                   width: parent.width
                   textFormat: Text.PlainText
                   text: summaryLimit
-                    ? String(summaryLimit.name || "Usage")
+                    ? String(modelData.providerLabel || "AI") + " · " + String(summaryLimit.name || "Usage")
                       + (Number(summaryLimit.resetsAt || 0) > 0 ? " · " + root.resetText(summaryLimit.resetsAt) : "")
                     : String(modelData.error || "No usage limit available")
                   color: root.dim
@@ -1183,7 +1382,7 @@ Panel {
           }
 
           BorderSurface {
-            visible: !!root.account
+            visible: !!root.account && String(root.account.provider || "codex") === "codex"
             width: parent.width
             implicitHeight: resetRow.implicitHeight + Style.space(18)
             color: root.account && (root.account.resets || []).length > 0
@@ -1245,9 +1444,9 @@ Panel {
               Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                text: root.sleepModeActive
+                text: root.sleepModeActive && root.refreshOnSchedule
                   ? "Automatic checks paused until " + root.clockText(root.sleepEndMinute)
-                  : "Auto-refresh every " + root.refreshIntervalText()
+                  : root.refreshBehaviorText()
                 color: root.dim
                 opacity: 0.75
                 font.family: root.fontFamily

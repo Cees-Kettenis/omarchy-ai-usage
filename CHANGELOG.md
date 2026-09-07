@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0 - 2026-09-07
+
+### Added
+
+- Added Claude Code account discovery through the official `claude auth
+  status` command, with separate `CLAUDE_CONFIG_DIR` support for multiple
+  accounts.
+- Added opt-in Claude usage capture through Claude Code's documented status
+  line for five-hour, seven-day, and gateway spend-limit windows.
+- Added separate Codex and Claude profile locations.
+- Added configurable hover/open, scheduled, and combined refresh modes with a
+  one-minute default hover cooldown.
+
+### Security
+
+- Kept provider discovery separate by credential marker without reading
+  Claude credential contents.
+- Removed inherited Anthropic credentials and endpoint overrides from each
+  Claude probe, and refused to overwrite existing custom status lines.
+- Stored only bounded, display-safe Claude limit data in owner-only cache
+  files and stopped reusing expired windows.
+
 ## 1.0.1 - 2026-09-04
 
 ### Fixed

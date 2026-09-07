@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "ai-usage",
   "name": "AI Usage",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "author": "Cees Kettenis",
   "license": "MIT",
-  "description": "Cached AI usage and rate limits, with support for multiple local Codex profiles.",
+  "description": "Cached OpenAI and Claude usage across multiple local profiles.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "AI Usage",
-    "description": "Show a compact AI usage summary and detailed limits for every configured profile.",
+    "description": "Show cached OpenAI and Claude limits for every configured profile.",
     "category": "AI",
     "aliases": [
       "ai-usage",
@@ -26,7 +26,10 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 900,
-      "profilesRoot": "~/.codex-profiles",
+      "codexProfilesRoot": "~/.codex-profiles",
+      "claudeProfilesRoot": "~/.claude",
+      "refreshMode": "Scheduled",
+      "hoverCooldownSec": 60,
       "privacyMode": "On",
       "sleepMode": "Off",
       "sleepStart": "17:00",
@@ -34,11 +37,40 @@
     },
     "schema": [
       {
-        "key": "profilesRoot",
+        "key": "codexProfilesRoot",
         "type": "string",
-        "label": "Codex profiles folder",
+        "label": "OpenAI / Codex profiles folder",
         "defaultValue": "~/.codex-profiles",
-        "description": "Folder whose immediate subfolders contain Codex auth.json files."
+        "description": "A Codex home or a folder whose immediate subfolders contain Codex auth.json files."
+      },
+      {
+        "key": "claudeProfilesRoot",
+        "type": "string",
+        "label": "Claude profiles folder",
+        "defaultValue": "~/.claude",
+        "description": "A Claude config home or a folder whose immediate subfolders are separate CLAUDE_CONFIG_DIR homes."
+      },
+      {
+        "key": "refreshMode",
+        "type": "enum",
+        "label": "Refresh mode",
+        "options": [
+          "On hover/open",
+          "Scheduled",
+          "Both"
+        ],
+        "defaultValue": "Scheduled",
+        "description": "Fetch on interaction, on the configured schedule, or both."
+      },
+      {
+        "key": "hoverCooldownSec",
+        "type": "integer",
+        "label": "Hover cooldown (seconds)",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 60,
+        "description": "Minimum time between hover-triggered refreshes."
       },
       {
         "key": "privacyMode",

@@ -16,6 +16,18 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn('"--kill-after=2s"', PANEL)
         self.assertIn("Component.onDestruction", PANEL)
 
+    def test_provider_roots_are_passed_separately(self) -> None:
+        self.assertIn('"--codex-profiles-root", codexProfilesRoot', PANEL)
+        self.assertIn('"--claude-profiles-root", claudeProfilesRoot', PANEL)
+
+    def test_hover_refresh_has_a_configurable_cooldown(self) -> None:
+        self.assertIn("function hoverRefresh()", PANEL)
+        self.assertIn("hoverCooldownSec * 1000", PANEL)
+        self.assertIn("onTooltipHoveredChanged", PANEL)
+
+    def test_scheduled_timer_obeys_refresh_mode(self) -> None:
+        self.assertIn("running: root.refreshOnSchedule", PANEL)
+
 
 if __name__ == "__main__":
     unittest.main()
