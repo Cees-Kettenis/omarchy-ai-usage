@@ -929,16 +929,20 @@ Panel {
                 id: refreshControls
                 width: parent.width
                 spacing: Style.space(4)
-                readonly property real intervalWidth: Style.space(120)
+                readonly property bool showInterval: root.draftRefreshMode !== "On hover/open"
+                readonly property bool showCooldown: root.draftRefreshMode !== "Scheduled"
+                readonly property int secondaryCount: (showInterval ? 1 : 0) + (showCooldown ? 1 : 0)
+                readonly property real secondaryWidth: secondaryCount > 1 ? Style.space(96) : Style.space(120)
+                readonly property real controlGap: Style.space(8)
+                readonly property real refreshWidth: Math.max(0,
+                  width - secondaryWidth * secondaryCount - controlGap * secondaryCount)
 
                 Row {
                   width: parent.width
-                  spacing: Style.space(8)
+                  spacing: refreshControls.controlGap
 
                   Text {
-                    width: refreshIntervalField.visible
-                      ? Math.max(0, parent.width - refreshControls.intervalWidth - parent.spacing)
-                      : parent.width
+                    width: refreshControls.refreshWidth
                     textFormat: Text.PlainText
                     text: "Refresh"
                     color: root.dim
@@ -948,10 +952,21 @@ Panel {
                   }
 
                   Text {
-                    visible: refreshIntervalField.visible
-                    width: visible ? refreshControls.intervalWidth : 0
+                    visible: refreshControls.showInterval
+                    width: visible ? refreshControls.secondaryWidth : 0
                     textFormat: Text.PlainText
                     text: "Interval (min)"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+
+                  Text {
+                    visible: refreshControls.showCooldown
+                    width: visible ? refreshControls.secondaryWidth : 0
+                    textFormat: Text.PlainText
+                    text: "Cooldown (sec)"
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -962,13 +977,11 @@ Panel {
                 Row {
                   width: parent.width
                   height: settingsColumn.controlHeight
-                  spacing: Style.space(8)
+                  spacing: refreshControls.controlGap
 
                   Dropdown {
                     id: refreshModeField
-                    width: refreshIntervalField.visible
-                      ? Math.max(0, parent.width - refreshControls.intervalWidth - parent.spacing)
-                      : parent.width
+                    width: refreshControls.refreshWidth
                     height: settingsColumn.controlHeight
                     showLabel: false
                     rowHeight: settingsColumn.controlHeight
@@ -982,8 +995,8 @@ Panel {
 
                   NumberField {
                     id: refreshIntervalField
-                    visible: root.draftRefreshMode !== "On hover/open"
-                    width: visible ? refreshControls.intervalWidth : 0
+                    visible: refreshControls.showInterval
+                    width: visible ? refreshControls.secondaryWidth : 0
                     height: settingsColumn.controlHeight
                     fieldWidth: width
                     field.height: settingsColumn.controlHeight
@@ -996,22 +1009,24 @@ Panel {
                     fontFamily: root.fontFamily
                     onModified: function(value) { root.draftRefreshIntervalMin = value }
                   }
-                }
-              }
 
-              NumberField {
-                id: hoverCooldownField
-                visible: root.draftRefreshMode !== "Scheduled"
-                label: "Hover cooldown (seconds)"
-                field.height: settingsColumn.controlHeight
-                value: root.draftHoverCooldownSec
-                from: 30
-                to: 3600
-                stepSize: 30
-                foreground: root.foreground
-                accent: Color.accent
-                fontFamily: root.fontFamily
-                onModified: function(value) { root.draftHoverCooldownSec = value }
+                  NumberField {
+                    id: hoverCooldownField
+                    visible: refreshControls.showCooldown
+                    width: visible ? refreshControls.secondaryWidth : 0
+                    height: settingsColumn.controlHeight
+                    fieldWidth: width
+                    field.height: settingsColumn.controlHeight
+                    value: root.draftHoverCooldownSec
+                    from: 30
+                    to: 3600
+                    stepSize: 30
+                    foreground: root.foreground
+                    accent: Color.accent
+                    fontFamily: root.fontFamily
+                    onModified: function(value) { root.draftHoverCooldownSec = value }
+                  }
+                }
               }
 
               Toggle {

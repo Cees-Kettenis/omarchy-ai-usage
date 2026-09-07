@@ -52,7 +52,16 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn('text: "OPENAI"', PANEL)
         self.assertIn('text: "Refresh"', PANEL)
         self.assertIn('text: "Interval (min)"', PANEL)
+        self.assertIn('text: "Cooldown (sec)"', PANEL)
         self.assertIn("OpenAI refresh settings do not request Claude usage", PANEL)
+
+    def test_hover_cooldown_is_inline_with_refresh_controls(self) -> None:
+        controls_start = PANEL.index("id: refreshControls")
+        controls_end = PANEL.index('label: "Pause scheduled checks"')
+        cooldown_position = PANEL.index("id: hoverCooldownField")
+        self.assertLess(controls_start, cooldown_position)
+        self.assertLess(cooldown_position, controls_end)
+        self.assertIn("readonly property int secondaryCount", PANEL)
 
     def test_sleep_schedule_is_part_of_openai_settings(self) -> None:
         sleep_position = PANEL.index('label: "Pause scheduled checks"')
