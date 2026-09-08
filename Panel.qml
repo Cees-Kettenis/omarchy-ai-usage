@@ -46,7 +46,9 @@ Panel {
   property int draftRefreshIntervalMin: 15
   property int draftHoverCooldownSec: 60
   property string folderPickerTarget: "codex"
+  property bool folderPickerActive: false
   property string settingsError: ""
+  property string claudeSetupMessage: ""
 
   readonly property int refreshIntervalSec: Math.max(30, Number(setting("refreshIntervalSec", 900)))
   readonly property string codexProfilesRoot: String(
@@ -169,7 +171,7 @@ Panel {
   }
 
   function browseProfilesRoot(target) {
-    if (folderPickerProcess.running) return
+    if (folderPickerActive || folderPickerProcess.running) return
     folderPickerTarget = target
     var currentPath = codexProfilesRootField.text || codexProfilesRoot
     if (target === "claude-single")
@@ -182,7 +184,24 @@ Panel {
       folderPickerPath,
       expandedProfilesPath(currentPath)
     ]
+    folderPickerActive = true
+    close()
     folderPickerProcess.running = true
+  }
+
+  function finishFolderPicker(output) {
+    if (!folderPickerActive) return
+    var selectedPath = String(output || "").trim()
+    var target = codexProfilesRootField
+    if (folderPickerTarget === "claude-single") target = claudeProfileRootField
+    else if (folderPickerTarget === "claude-multiple") target = claudeProfilesRootField
+    if (selectedPath !== "") target.text = selectedPath
+    folderPickerActive = false
+    open()
+    Qt.callLater(function() {
+      target.selectAll()
+      target.forceActiveFocus()
+    })
   }
 
   function sleepModeAt(milliseconds) {
@@ -493,6 +512,23 @@ Panel {
     refreshNow(false, true)
   }
 
+  function setupClaudeCapture(remove) {
+    if (claudeSetupProcess.running) return
+    if (draftClaudeProfileMode !== claudeProfileMode
+        || claudeProfileRootField.text.trim() !== claudeProfileRoot
+        || claudeProfilesRootField.text.trim() !== claudeProfilesRoot) {
+      claudeSetupMessage = "Save Claude profile changes before changing capture."
+      return
+    }
+    claudeSetupMessage = remove ? "Removing capture…" : "Enabling capture…"
+    claudeSetupProcess.command = collectorCommand([
+      remove ? "--remove-claude-capture" : "--setup-claude-capture", "--json",
+      "--claude-profiles-root", activeClaudeProfilesRoot,
+      "--claude-profile-mode", claudeModeArgument(claudeProfileMode)
+    ], "15s")
+    claudeSetupProcess.running = true
+  }
+
   function ageText(milliseconds) {
     if (!(milliseconds >= 0)) return "unknown"
     var seconds = Math.floor(milliseconds / 1000)
@@ -577,15 +613,18 @@ Panel {
     if (cacheReadProcess.running) cacheReadProcess.running = false
     if (refreshProcess.running) refreshProcess.running = false
     if (folderPickerProcess.running) folderPickerProcess.running = false
+    if (claudeSetupProcess.running) claudeSetupProcess.running = false
   }
 
   onOpenedChanged: {
     if (opened) {
       nowMs = Date.now()
       hoverRefresh()
-      Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      Qt.callLater(function() {
+        if (!editingSettings) keyCatcher.forceActiveFocus()
+      })
     } else {
-      if (editingSettings) closeSettings(false)
+      if (editingSettings && !folderPickerActive) closeSettings(false)
       if (editingProfileId !== "") cancelProfileNameEdit(false)
     }
   }
@@ -642,23 +681,34 @@ Panel {
     id: folderPickerProcess
     running: false
 
+    onExited: function(exitCode) {
+      Qt.callLater(function() { root.finishFolderPicker(folderPickerOutput.text) })
+    }
+
     stdout: StdioCollector {
+      id: folderPickerOutput
       waitForEnd: true
-      onStreamFinished: {
-        var selectedPath = text.trim()
-        if (selectedPath === "") return
-        var target = codexProfilesRootField
-        if (root.folderPickerTarget === "claude-single") target = claudeProfileRootField
-        else if (root.folderPickerTarget === "claude-multiple") target = claudeProfilesRootField
-        target.text = selectedPath
-        target.selectAll()
-        target.forceActiveFocus()
-      }
     }
 
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: if (text.trim() !== "") console.warn("ai-usage folder picker", text.trim())
+    }
+  }
+
+  Process {
+    id: claudeSetupProcess
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var result = JSON.parse(text)
+          root.claudeSetupMessage = String(result.message || "Claude capture setup finished").substring(0, 4096)
+        } catch (error) {
+          root.claudeSetupMessage = "Claude capture action failed or timed out."
+        }
+      }
     }
   }
 
@@ -1057,7 +1107,7 @@ Panel {
                 PanelActionButton {
                   id: claudeHelpButton
                   iconText: "?"
-                  tooltipText: "AI Usage configures Claude Code's official status line automatically. Claude usage updates after you send a message. OpenAI refresh settings do not request Claude usage."
+                  tooltipText: "Enable Claude Code usage capture below to configure Claude Code's official status line. Claude usage updates after you send a message. OpenAI refresh settings do not request Claude usage."
                   foreground: root.foreground
                   fontFamily: root.fontFamily
                   fontSize: Style.font.caption
@@ -1155,6 +1205,56 @@ Panel {
                 width: parent.width
                 height: 1
                 color: root.alpha(root.foreground, 0.16)
+              }
+
+              Row {
+                id: captureActions
+                width: parent.width
+                spacing: Style.space(8)
+
+                Button {
+                  width: (captureActions.width - captureActions.spacing) / 2
+                  text: "Enable Claude Code\nusage capture"
+                  enabled: !claudeSetupProcess.running && !refreshProcess.running
+                  bordered: true
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  onClicked: root.setupClaudeCapture(false)
+                }
+
+                Button {
+                  width: (captureActions.width - captureActions.spacing) / 2
+                  text: "Remove Claude Code\nusage capture"
+                  enabled: !claudeSetupProcess.running && !refreshProcess.running
+                  bordered: true
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  onClicked: root.setupClaudeCapture(true)
+                }
+
+              }
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: "If not removed before uninstalling AI Usage, part of the plugin will persist."
+                wrapMode: Text.WordWrap
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                visible: root.claudeSetupMessage !== ""
+                width: parent.width
+                textFormat: Text.PlainText
+                text: root.claudeSetupMessage
+                wrapMode: Text.WordWrap
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
               }
 
               PanelSectionHeader {
@@ -1315,8 +1415,11 @@ Panel {
                   spacing: Style.space(6)
 
                   Text {
+                    id: summaryName
                     visible: !summaryCard.editingName
-                    width: visible ? Math.min(implicitWidth, Style.space(210)) : 0
+                    width: visible ? Math.min(summaryNameMetrics.advanceWidth, Style.space(210),
+                      Math.max(0, parent.width - summaryPercent.width
+                        - editProfileNameButton.width - parent.spacing * 2)) : 0
                     textFormat: Text.PlainText
                     text: root.displayProfileName(modelData)
                     color: root.foreground
@@ -1324,6 +1427,12 @@ Panel {
                     font.pixelSize: Style.font.body
                     font.bold: true
                     elide: Text.ElideRight
+                  }
+
+                  TextMetrics {
+                    id: summaryNameMetrics
+                    font: summaryName.font
+                    text: summaryName.text
                   }
 
                   TextField {

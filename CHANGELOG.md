@@ -1,43 +1,52 @@
 # Changelog
 
-## 1.1.0 - 2026-09-07
+## 1.1.0 - 2026-09-08
 
 ### Added
 
-- Added Claude Code account discovery through the official `claude auth
-  status` command, with separate `CLAUDE_CONFIG_DIR` support for multiple
-  accounts.
-- Added automatic Claude usage capture through Claude Code's documented status
-  line for five-hour, seven-day, and gateway spend-limit windows.
-- Added separate Codex and Claude profile locations.
-- Added explicit single-account and multiple-account Claude modes, with single
-  account at `~/.claude` as the default.
-- Added per-profile name editing shared by the summary, profile switcher, and
-  profile heading.
-- Added configurable OpenAI hover/open, scheduled, and combined refresh modes
-  with a one-minute default hover cooldown and configurable schedule interval.
-- Grouped all scheduled and sleep controls under OpenAI, separated provider
-  settings with dividers, and removed redundant popup headings.
-- Matched the height of single-line settings controls and made Claude usage
-  setup automatic when an enabled widget discovers a profile.
-- Removed the redundant summary logo and title, moved settings to the left,
-  and aligned refresh controls through a shared label and control grid.
-- Moved settings into the profile-switcher row after the final account tab.
-- Kept hover cooldown inline with refresh mode and interval, including when
-  both refresh triggers are enabled.
-- Kept the sleep banner while removing its duplicate schedule subtitle; the
-  footer remains the sole place for schedule details.
+- Claude Code profiles alongside OpenAI Codex, with separate provider locations
+  and single-account or multiple-account Claude setup.
+- Opt-in Claude usage capture for five-hour, seven-day, and gateway spend-limit
+  windows through Claude Code's status-line interface.
+- **Enable Claude Code usage capture** and **Remove Claude Code usage capture**
+  buttons beside each other in settings. Removal deletes only the matching
+  command installed by AI Usage and preserves other Claude settings.
+- Per-profile names shared by the summary and account tabs. Clear a name to
+  restore its default without renaming the profile folder.
+- OpenAI refresh on hover/open, on a schedule, or both, with a configurable
+  interval and hover cooldown. Sleep pauses only scheduled OpenAI checks.
+- A user guide for setup, controls, capture removal, and troubleshooting, with
+  updated summary, settings, detail, and marketplace preview images.
+
+### Changed
+
+- Grouped settings into OpenAI, Claude, and privacy sections, with consistent
+  control heights and inline refresh options.
+- Placed the settings button after the account tabs and removed redundant
+  headings and schedule text. The sleep banner remains visible while paused.
+- Claude setup is explicit. Routine refreshes never install or change capture.
+  Existing custom status lines are left unchanged and reported during setup.
+
+### Fixed
+
+- Folder selection now returns to settings with the selected path and other
+  unsaved changes intact. Cancelling the picker preserves the draft too.
+- Summary profile names no longer disappear because of a label-width binding
+  loop. Long names shorten to fit beside the rename button and usage percentage.
 
 ### Security
 
-- Kept provider discovery separate by credential marker without reading
-  Claude credential contents.
-- Ignored ambiguous directories containing both Codex and Claude credential
-  markers.
-- Removed inherited Anthropic credentials and endpoint overrides from each
-  Claude probe, and refused to overwrite existing custom status lines.
-- Stored only bounded, display-safe Claude limit data in owner-only cache
-  files and stopped reusing expired windows.
+- Rejected writable path ancestors, symlinks, ambiguous provider directories,
+  and non-regular files. Nonblocking opens prevent special files from hanging
+  reads; metadata-only handles validate credentials without reading them.
+- Removed inherited provider credential, account, endpoint, and loader overrides.
+  Provider commands start outside the inherited working directory.
+- Refused hard-linked lock files before changing permissions and checked for
+  concurrent Claude settings edits before replacement.
+- Bounded Claude status-line input and cached display data, kept cache files
+  owner-only, and stopped reusing expired usage windows.
+- Pinned CI checkout code and disabled persisted checkout credentials. Release
+  archives and compilation checks include the Claude bridge.
 
 ## 1.0.1 - 2026-09-04
 

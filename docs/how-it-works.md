@@ -5,6 +5,8 @@
   <img src="screenshots/details.png" width="405" alt="Profile view showing five-hour and weekly limits without account details">
 </p>
 
+For setup and everyday controls, start with the [user guide](user-guide.md).
+
 Version 1.1 integrates with OpenAI Codex and Claude Code. `collector.py`
 collects their display data and writes a small cache file. The panel asks the
 collector for a validated JSON snapshot and renders the bar popup.
@@ -67,29 +69,29 @@ account or provider.
 Claude Code does not expose subscription usage through a documented
 non-interactive usage command. Instead, its documented status-line interface
 sends `rate_limits.five_hour`, `rate_limits.seven_day`, and an optional gateway
-`spend_limit` to a local command after an API response. AI Usage adds that
-command automatically on the first refresh after the plugin is enabled and
-whenever it discovers a new Claude profile. Omarchy does not run plugin install
-hooks while cloning, so this configuration happens when the enabled widget
-first loads. Existing custom status lines are never replaced. Make a request in
-each profile so Claude Code emits its current limits.
+`spend_limit` to a local command after an API response. Save your profile
+locations, then click **Enable Claude Code usage capture** in settings.
+This adds the command to the saved profiles that exist at that moment. Existing
+custom status lines are preserved, and capture is not installed for those
+profiles. Routine refreshes never change Claude
+settings. Repeat setup after adding profiles, and make a request in each profile
+so Claude Code emits its current limits.
 
 Claude Code supports one configured user status line, so this integration also
 displays a compact `Claude · 5h … · 7d …` line in Claude Code. Anthropic notes
 that enabling a custom status line hides most of Claude Code's footer keyboard
-hints. Remove the `statusLine` field from that profile's `settings.json` before
-uninstalling AI Usage, or whenever you want Claude Code's default footer back.
+hints. Click **Remove Claude Code usage capture** before uninstalling AI Usage, or
+whenever you want Claude Code's default footer back. This removes capture from
+the saved Claude location and leaves other status-line commands unchanged.
+The command-line equivalent is `collector.py --remove-claude-capture`.
 
 The bridge keeps only limit percentages, reset times, the profile location,
 and capture time. It discards the rest of Claude Code's status-line input,
 including transcript paths and session information. Expired windows are not
 reused. The status line itself runs locally and consumes no API tokens.
 
-Anthropic currently documents only the general five-hour and seven-day
-subscription windows in this machine-readable interface. Model-specific
-allowances such as Fable therefore cannot be shown separately until Claude
-Code officially includes them. The parser can accept additional labeled
-windows if Anthropic adds a documented list later.
+AI Usage can show only the limits supplied by Claude Code's status-line payload.
+It cannot derive missing model-specific allowances from the general windows.
 
 ## Local cache
 
@@ -125,7 +127,7 @@ switcher, and profile heading without renaming folders or changing credentials.
 Open the popup and select the gear button.
 
 <p align="center">
-  <img src="screenshots/settings.png" width="413" alt="AI Usage settings for OpenAI, Claude, and privacy">
+  <img src="screenshots/settings.png" width="396" alt="OpenAI and Claude settings with side-by-side capture enable and remove buttons">
 </p>
 
 The settings panel controls:
@@ -134,9 +136,15 @@ The settings panel controls:
   scheduled, or both. The schedule interval and hover cooldown are
   configurable. Sleep only pauses scheduled OpenAI checks.
 - Claude account setup, with separate single-account and multiple-account
-  locations. Single account is the default.
+  locations. Single account is the default. Save the location before using the
+  capture enable or remove buttons.
 - Hide account details. This is on by default and keeps identity data out of
   the request and cache.
+
+Selecting a folder temporarily hides the popup. It returns to settings when
+the picker finishes, keeping the selected path and other unsaved edits.
+Cancelling the picker keeps the previous path. Click **Save** to apply changes.
+
 The settings UI groups sleep with OpenAI and separates the provider sections
 with a line. Privacy is the only global setting. When sleep is active, the last
 cached result stays visible, and hover/open and manual refreshes still work.
@@ -190,6 +198,25 @@ Use other profile locations for one run:
   --force \
   --print
 ```
+
+Configure capture explicitly from the command line:
+
+```bash
+~/.config/omarchy/plugins/ai-usage/collector.py --setup-claude-capture
+```
+
+Remove capture before uninstalling:
+
+```bash
+~/.config/omarchy/plugins/ai-usage/collector.py --remove-claude-capture
+```
+
+Both capture commands accept the same Claude profile location and mode options.
+They operate on the selected location and do not run provider commands.
+Removal checks for the exact command installed by this copy of AI Usage before
+deleting the status-line setting. Other settings and custom status lines remain.
+Disabling or uninstalling the widget does not perform this cleanup automatically.
+Previously configured locations must be selected separately for removal.
 
 Identity stays hidden unless you pass `--show-identity` explicitly.
 

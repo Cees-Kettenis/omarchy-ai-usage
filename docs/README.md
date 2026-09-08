@@ -1,5 +1,7 @@
 # Documentation
 
+- [User guide](user-guide.md) covers setup, account names, refresh controls,
+  Claude capture, troubleshooting, and uninstalling.
 - [How it works](how-it-works.md) explains what the collector reads, what it
   stores, and how the popup and settings behave.
 - [Development and releases](development.md) explains the local checks, tagged

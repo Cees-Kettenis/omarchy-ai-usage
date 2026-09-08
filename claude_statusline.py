@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 # Isolated mode omits the script directory from sys.path. Add only this
@@ -16,12 +17,12 @@ import collector
 
 
 def main() -> int:
-    raw = sys.stdin.buffer.read(collector.MAX_STATUSLINE_BYTES + 1)
-    if len(raw) > collector.MAX_STATUSLINE_BYTES:
-        return 1
-    configured = os.environ.get("CLAUDE_CONFIG_DIR")
-    profile_home = collector.resolve_root(configured, None, collector.DEFAULT_CLAUDE_PROFILE_ROOT)
     try:
+        raw = collector.read_statusline_input(
+            sys.stdin.fileno(), time.monotonic() + collector.STATUSLINE_TIMEOUT_SECONDS
+        )
+        configured = os.environ.get("CLAUDE_CONFIG_DIR")
+        profile_home = collector.resolve_root(configured, None, collector.DEFAULT_CLAUDE_PROFILE_ROOT)
         payload = json.loads(raw.decode("utf-8"))
         print(collector.capture_claude_statusline(payload, profile_home))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):

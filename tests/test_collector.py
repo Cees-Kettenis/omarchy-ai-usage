@@ -29,6 +29,59 @@ def temporary_cache():
 
 
 class CacheSecurityTests(unittest.TestCase):
+    def test_setup_preserves_settings_changed_since_read(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            path = profile / "settings.json"
+            current = b'{"statusLine":{"type":"command","command":"custom"}}'
+            path.write_bytes(current)
+            with self.assertRaisesRegex(ValueError, "changed during setup"):
+                collector._write_claude_settings(profile, {"theme": "dark"}, b'{}')
+            self.assertEqual(path.read_bytes(), current)
+            self.assertEqual(list(profile.glob('*.tmp')), [])
+
+    def test_hardlinked_lock_does_not_change_target_permissions(self) -> None:
+        with temporary_cache() as (base, root):
+            directory = collector.ensure_cache_root()
+            target = base / "unrelated"
+            target.write_text("keep", encoding="utf-8")
+            target.chmod(0o644)
+            os.link(target, root / "refresh.lock")
+            try:
+                with self.assertRaises(collector.UnsafePathError):
+                    collector._open_lock(directory)
+            finally:
+                os.close(directory)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+
+    def test_special_files_are_rejected_without_blocking(self) -> None:
+        # A subprocess timeout makes regressions fail rather than hang the suite.
+        program = """
+import collector, os, tempfile
+from pathlib import Path
+with tempfile.TemporaryDirectory() as temporary:
+    root = Path(temporary)
+    for marker in ('auth.json', '.credentials.json', 'settings.json'):
+        os.mkfifo(root / marker, 0o600)
+    assert collector.discover_profiles(root) == []
+    assert collector.discover_claude_profiles(root) == []
+    for validate in (collector.validate_profile, collector.validate_claude_profile):
+        try:
+            validate(root)
+        except collector.UnsafePathError:
+            pass
+        else:
+            raise AssertionError('FIFO accepted')
+    try:
+        collector._read_secure_path(root / 'settings.json', 100)
+    except collector.UnsafePathError:
+        pass
+    else:
+        raise AssertionError('FIFO accepted')
+"""
+        subprocess.run(["/usr/bin/python3", "-c", program], check=True, timeout=3,
+                       cwd=Path(collector.__file__).parent)
+
     def test_cache_permissions_and_round_trip(self) -> None:
         with temporary_cache() as (_, root):
             payload = {
@@ -96,6 +149,20 @@ class CacheSecurityTests(unittest.TestCase):
 
 
 class ProfileSecurityTests(unittest.TestCase):
+    def test_writable_ancestor_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shared = root / "shared"
+            shared.mkdir()
+            shared.chmod(0o777)
+            profile = shared / "profile"
+            profile.mkdir(mode=0o700)
+            auth = profile / "auth.json"
+            auth.write_text("{}", encoding="utf-8")
+            auth.chmod(0o600)
+            with self.assertRaises(collector.UnsafePathError):
+                collector.validate_profile(profile)
+
     def test_private_profile_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             profile = Path(temporary) / "profile-one"
@@ -273,6 +340,44 @@ class ProfileSecurityTests(unittest.TestCase):
 
 
 class ProcessSecurityTests(unittest.TestCase):
+    def test_statusline_input_has_a_deadline(self) -> None:
+        reader, writer = os.pipe()
+        try:
+            os.write(writer, b'{')
+            with self.assertRaises(TimeoutError):
+                collector.read_statusline_input(reader, time.monotonic() + 0.02)
+        finally:
+            os.close(reader)
+            os.close(writer)
+
+    def test_statusline_input_has_a_size_limit(self) -> None:
+        with tempfile.TemporaryFile() as stream:
+            stream.write(b'x' * (collector.MAX_STATUSLINE_BYTES + 1))
+            stream.seek(0)
+            with self.assertRaises(ValueError):
+                collector.read_statusline_input(stream.fileno(), time.monotonic() + 1)
+
+    def test_root_owned_system_executable_is_accepted(self) -> None:
+        executable = Path("/usr/bin/true").resolve()
+        self.assertEqual(collector._trusted_executable(executable), executable)
+
+    def test_codex_environment_removes_account_and_endpoint_overrides(self) -> None:
+        overrides = {key: "untrusted" for key in (
+            "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "LD_AUDIT",
+            "CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_AUTH_TOKEN"
+        )}
+        with mock.patch.dict(os.environ, overrides):
+            env = collector.runtime_environment(Path("/profiles/one"), Path("/trusted/bin/codex"))
+        for key in overrides:
+            self.assertNotIn(key, env)
+
+    def test_expired_claude_probe_does_not_start_a_process(self) -> None:
+        with (mock.patch.object(collector, "validate_claude_profile"),
+              mock.patch.object(collector.subprocess, "Popen") as popen):
+            result = collector.probe_claude_profile(Path("/profile"), Path("/cli"), False, 0)
+        popen.assert_not_called()
+        self.assertFalse(result["ready"])
+
     def test_codex_resolution_does_not_use_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -349,6 +454,7 @@ class ProcessSecurityTests(unittest.TestCase):
 
         self.assertEqual(popen.call_args.args[0], [str(command), "auth", "status"])
         self.assertEqual(popen.call_args.kwargs["env"]["CLAUDE_CONFIG_DIR"], str(profile))
+        self.assertEqual(popen.call_args.kwargs["cwd"], "/")
         self.assertEqual(account["provider"], "claude")
         self.assertEqual(account["email"], "person@example.com")
         self.assertEqual(account["plan"], "Pro")
@@ -598,7 +704,40 @@ class PayloadTests(unittest.TestCase):
             self.assertIn("make a Claude Code request", message)
             self.assertEqual(stat.S_IMODE(settings.stat().st_mode), 0o600)
 
-    def test_refresh_installs_claude_bridge_automatically(self) -> None:
+    def test_capture_removal_preserves_settings_and_can_be_repeated(self) -> None:
+        for mode in ("single", "multiple"):
+            with self.subTest(mode=mode), temporary_cache(), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                profiles = [root] if mode == "single" else [root / "first", root / "second"]
+                for profile in profiles:
+                    profile.mkdir(mode=0o700, exist_ok=True)
+                    (profile / ".credentials.json").write_text("{}")
+                    (profile / ".credentials.json").chmod(0o600)
+                    (profile / "settings.json").write_text(json.dumps({"theme": "dark"}))
+                self.assertTrue(collector.setup_claude_capture(root, mode)["ok"])
+                self.assertTrue(collector.setup_claude_capture(root, mode, remove=True)["ok"])
+                self.assertTrue(collector.setup_claude_capture(root, mode, remove=True)["ok"])
+                for profile in profiles:
+                    self.assertEqual(json.loads((profile / "settings.json").read_text()), {"theme": "dark"})
+                    self.assertEqual(stat.S_IMODE((profile / "settings.json").stat().st_mode), 0o600)
+
+    def test_capture_removal_refuses_changed_statusline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            settings = profile / "settings.json"
+            original = json.dumps({"statusLine": {"type": "command", "command": "my-status"}, "theme": "dark"})
+            settings.write_text(original)
+            with self.assertRaisesRegex(ValueError, "different Claude status line"):
+                collector.remove_claude_bridge(profile)
+            self.assertEqual(settings.read_text(), original)
+
+    def test_capture_removal_does_not_create_missing_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile = Path(temporary)
+            collector.remove_claude_bridge(profile)
+            self.assertFalse((profile / "settings.json").exists())
+
+    def test_refresh_does_not_install_claude_bridge(self) -> None:
         with temporary_cache(), tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             codex_root = root / "codex"
@@ -620,11 +759,14 @@ class PayloadTests(unittest.TestCase):
                     claude_profile_mode="single",
                 )
 
+            self.assertFalse((claude_profile / "settings.json").exists())
+            result = collector.setup_claude_capture(claude_profile, "single")
+            self.assertTrue(result["ok"])
             installed = json.loads((claude_profile / "settings.json").read_text(encoding="utf-8"))
             self.assertEqual(installed["statusLine"]["type"], "command")
             self.assertIn("claude_statusline.py", installed["statusLine"]["command"])
 
-    def test_automatic_bridge_setup_keeps_custom_statusline(self) -> None:
+    def test_explicit_bridge_setup_keeps_custom_statusline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             profile = Path(temporary)
             credentials = profile / ".credentials.json"

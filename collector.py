@@ -35,6 +35,7 @@ MAX_CACHE_BYTES = 512 * 1024
 MAX_RPC_LINE_BYTES = 256 * 1024
 MAX_RPC_TOTAL_BYTES = 512 * 1024
 MAX_STATUSLINE_BYTES = 512 * 1024
+STATUSLINE_TIMEOUT_SECONDS = 5
 MAX_COMMAND_OUTPUT_BYTES = 64 * 1024
 MAX_PROFILES = 32
 MAX_ACCOUNTS = MAX_PROFILES * 2
@@ -76,7 +77,19 @@ def _directory_flags() -> int:
 
 
 def _file_flags() -> int:
-    return os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    # A FIFO must not block open() before we can reject its file type.
+    return os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOFOLLOW
+
+
+def _require_trusted_directory(descriptor: int, label: str) -> None:
+    details = os.fstat(descriptor)
+    if details.st_uid not in (0, os.getuid()):
+        raise UnsafePathError(f"{label} has an unexpected owner")
+    # Root-owned sticky directories such as /tmp protect owned children
+    # against replacement by other users. Other writable ancestors do not.
+    sticky_root = details.st_uid == 0 and details.st_mode & stat.S_ISVTX
+    if details.st_mode & 0o022 and not sticky_root:
+        raise UnsafePathError(f"{label} is writable by another user")
 
 
 def _open_directory_tree(path: Path, *, create: bool = False) -> int:
@@ -88,6 +101,7 @@ def _open_directory_tree(path: Path, *, create: bool = False) -> int:
     descriptor = os.open("/", _directory_flags())
     try:
         for component in path.parts[1:]:
+            _require_trusted_directory(descriptor, f"Ancestor of {path}")
             if not component or component in (".", ".."):  # Defensive for unusual Path implementations.
                 raise UnsafePathError(f"Unsafe directory component in {path}")
             try:
@@ -99,6 +113,7 @@ def _open_directory_tree(path: Path, *, create: bool = False) -> int:
                 child = os.open(component, _directory_flags(), dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
+        _require_trusted_directory(descriptor, str(path))
         return descriptor
     except BaseException:
         os.close(descriptor)
@@ -295,7 +310,7 @@ def _trusted_executable(path: Path) -> Path:
     resolved = path.expanduser().resolve(strict=True)
     parent = _open_directory_tree(resolved.parent)
     try:
-        _require_owned_directory(parent, f"Executable directory {resolved.parent}")
+        _require_trusted_directory(parent, f"Executable directory {resolved.parent}")
         descriptor = os.open(resolved.name, os.O_RDONLY | _file_flags(), dir_fd=parent)
     finally:
         os.close(parent)
@@ -334,6 +349,7 @@ def runtime_environment(profile_home: Path, codex_command: Path) -> dict[str, st
         "GCONV_PATH",
         "LD_LIBRARY_PATH",
         "LD_PRELOAD",
+        "LD_AUDIT",
         "NODE_OPTIONS",
         "NODE_PATH",
         "PERL5OPT",
@@ -344,6 +360,9 @@ def runtime_environment(profile_home: Path, codex_command: Path) -> dict[str, st
         "RUBYOPT",
     ):
         env.pop(key, None)
+    for key in tuple(env):
+        if key.startswith(("OPENAI_", "CODEX_", "ANTHROPIC_", "CLAUDE_")):
+            env.pop(key, None)
     env["PATH"] = os.pathsep.join((str(codex_command.parent), SAFE_SYSTEM_PATH))
     env["CODEX_HOME"] = str(profile_home)
     return env
@@ -567,7 +586,7 @@ def validate_profile(profile_home: Path) -> None:
     profile = _open_directory_tree(profile_home)
     try:
         _require_owned_directory(profile, f"Profile {profile_home}")
-        auth = os.open("auth.json", os.O_RDONLY | _file_flags(), dir_fd=profile)
+        auth = os.open("auth.json", os.O_PATH | _file_flags(), dir_fd=profile)
         try:
             _require_owned_file(auth, f"{profile_home}/auth.json", private=True)
         finally:
@@ -581,7 +600,7 @@ def validate_claude_profile(profile_home: Path) -> None:
     profile = _open_directory_tree(profile_home)
     try:
         _require_owned_directory(profile, f"Claude profile {profile_home}")
-        credentials = os.open(".credentials.json", os.O_RDONLY | _file_flags(), dir_fd=profile)
+        credentials = os.open(".credentials.json", os.O_PATH | _file_flags(), dir_fd=profile)
         try:
             _require_owned_file(credentials, f"{profile_home}/.credentials.json", private=True)
         finally:
@@ -659,6 +678,7 @@ def probe_profile(
             stderr=subprocess.DEVNULL,
             bufsize=0,
             env=runtime_environment(profile_home, codex_command),
+            cwd="/",
             start_new_session=True,
         )
         _ACTIVE_PROCESSES.add(process)
@@ -721,13 +741,10 @@ def probe_profile(
 
 def _directory_has_marker(directory: int, marker: str) -> bool:
     try:
-        descriptor = os.open(marker, os.O_RDONLY | _file_flags(), dir_fd=directory)
+        details = os.stat(marker, dir_fd=directory, follow_symlinks=False)
     except OSError:
         return False
-    try:
-        return stat.S_ISREG(os.fstat(descriptor).st_mode)
-    finally:
-        os.close(descriptor)
+    return stat.S_ISREG(details.st_mode)
 
 
 def discover_provider_profiles(
@@ -914,7 +931,27 @@ def capture_claude_statusline(raw: Any, profile_home: Path) -> str:
     return "Claude" + ((" · " + " · ".join(parts)) if parts else "")
 
 
-def _write_claude_settings(profile_home: Path, payload: dict[str, Any]) -> None:
+def read_statusline_input(descriptor: int, deadline: float) -> bytes:
+    """Read a bounded status-line payload without waiting indefinitely for EOF."""
+    output = bytearray()
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Claude status-line input timed out")
+        ready, _, _ = select.select([descriptor], [], [], remaining)
+        if not ready:
+            raise TimeoutError("Claude status-line input timed out")
+        chunk = os.read(descriptor, min(65536, MAX_STATUSLINE_BYTES + 1 - len(output)))
+        if not chunk:
+            return bytes(output)
+        output.extend(chunk)
+        if len(output) > MAX_STATUSLINE_BYTES:
+            raise ValueError("Claude status-line input is too large")
+
+
+def _write_claude_settings(
+    profile_home: Path, payload: dict[str, Any], expected: bytes | None
+) -> None:
     encoded = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
     if len(encoded) > MAX_CONFIG_BYTES:
         raise ValueError("Claude settings exceed the size limit")
@@ -935,6 +972,12 @@ def _write_claude_settings(profile_home: Path, payload: dict[str, Any]) -> None:
         os.fsync(descriptor)
         os.close(descriptor)
         descriptor = -1
+        try:
+            current = _read_secure_path(profile_home / "settings.json", MAX_CONFIG_BYTES)
+        except FileNotFoundError:
+            current = None
+        if current != expected:
+            raise ValueError("Claude settings changed during setup; retry after saving your edits")
         os.replace(temporary_name, "settings.json", src_dir_fd=directory, dst_dir_fd=directory)
         os.fsync(directory)
     finally:
@@ -955,8 +998,10 @@ def install_claude_bridge(profile_home: Path) -> str:
     command = f"/usr/bin/python3 -I {shlex.quote(str(bridge))}"
     settings_path = profile_home / "settings.json"
     try:
-        settings = json.loads(_read_secure_path(settings_path, MAX_CONFIG_BYTES).decode("utf-8"))
+        original = _read_secure_path(settings_path, MAX_CONFIG_BYTES)
+        settings = json.loads(original.decode("utf-8"))
     except FileNotFoundError:
+        original = None
         settings = {}
     if not isinstance(settings, dict):
         raise ValueError(f"{settings_path} must contain a JSON object")
@@ -967,8 +1012,30 @@ def install_claude_bridge(profile_home: Path) -> str:
     if existing is not None:
         raise ValueError(f"{profile_home} already has a custom Claude status line; it was not changed")
     settings["statusLine"] = desired
-    _write_claude_settings(profile_home, settings)
+    _write_claude_settings(profile_home, settings, original)
     return f"Enabled Claude usage capture for {profile_home}; make a Claude Code request to populate usage"
+
+
+def remove_claude_bridge(profile_home: Path) -> str:
+    """Remove only this installation's status-line command."""
+    settings_path = profile_home / "settings.json"
+    try:
+        original = _read_secure_path(settings_path, MAX_CONFIG_BYTES)
+    except FileNotFoundError:
+        return f"Claude usage capture is not installed for {profile_home}"
+    settings = json.loads(original.decode("utf-8"))
+    if not isinstance(settings, dict):
+        raise ValueError(f"{settings_path} must contain a JSON object")
+    bridge = Path(__file__).with_name("claude_statusline.py").resolve()
+    command = f"/usr/bin/python3 -I {shlex.quote(str(bridge))}"
+    existing = settings.get("statusLine")
+    if existing is None:
+        return f"Claude usage capture is not installed for {profile_home}"
+    if existing != {"type": "command", "command": command}:
+        raise ValueError(f"{profile_home} has a different Claude status line; it was not changed")
+    del settings["statusLine"]
+    _write_claude_settings(profile_home, settings, original)
+    return f"Removed Claude usage capture for {profile_home}"
 
 
 def ensure_claude_bridges(profiles: list[Path]) -> dict[str, str]:
@@ -980,6 +1047,38 @@ def ensure_claude_bridges(profiles: list[Path]) -> dict[str, str]:
         except Exception as exc:
             errors[str(profile)] = safe_text(f"Claude usage capture could not be configured: {exc}")
     return errors
+
+
+def setup_claude_capture(profile_root: Path, mode: str, *, remove: bool = False) -> dict[str, Any]:
+    """Configure only profiles discovered during an explicit setup action."""
+    directory = ensure_cache_root()
+    lock = None
+    try:
+        lock = _open_lock(directory)
+        _acquire_lock(lock, time.monotonic() + LOCK_TIMEOUT_SECONDS)
+        profiles = discover_claude_profiles(profile_root, mode)
+        if not profiles:
+            return {"ok": False, "message": "No Claude profiles found at the saved location"}
+        if remove:
+            errors = {}
+            for profile in profiles:
+                try:
+                    remove_claude_bridge(profile)
+                except Exception as exc:
+                    errors[str(profile)] = safe_text(f"Claude usage capture could not be removed: {exc}")
+        else:
+            errors = ensure_claude_bridges(profiles)
+        count = len(profiles) - len(errors)
+        message = f"Capture enabled for {count} Claude profile(s). Send a Claude Code message to populate usage."
+        if remove:
+            message = f"Capture removed or already absent for {count} Claude profile(s)."
+        if errors:
+            message += " " + "; ".join(errors.values())
+        return {"ok": not errors, "message": safe_text(message, limit=4096)}
+    finally:
+        if lock is not None:
+            os.close(lock)
+        os.close(directory)
 
 
 def read_claude_status(profile_home: Path) -> dict[str, Any] | None:
@@ -1038,6 +1137,8 @@ def probe_claude_profile(
     process: subprocess.Popen[bytes] | None = None
     try:
         validate_claude_profile(profile_home)
+        if time.monotonic() >= refresh_deadline:
+            raise TimeoutError("Refresh timed out")
         process = subprocess.Popen(
             [str(claude_command), "auth", "status"],
             stdin=subprocess.DEVNULL,
@@ -1045,6 +1146,7 @@ def probe_claude_profile(
             stderr=subprocess.DEVNULL,
             bufsize=0,
             env=claude_runtime_environment(profile_home, claude_command),
+            cwd="/",
             start_new_session=True,
         )
         _ACTIVE_PROCESSES.add(process)
@@ -1062,7 +1164,7 @@ def probe_claude_profile(
         if not logged_in:
             error = "Claude Code is not signed in for this profile"
         elif snapshot is None:
-            error = "Send your first message in Claude Code to get usage information"
+            error = "Enable Claude Code usage capture in settings, then send a Claude Code message"
         elif not limits:
             error = "Claude Code has not reported subscription limits yet"
         result: dict[str, Any] = {
@@ -1185,6 +1287,8 @@ def _open_lock(directory: int) -> int:
     )
     try:
         _require_owned_file(descriptor, str(LOCK_FILE))
+        if os.fstat(descriptor).st_nlink != 1:
+            raise UnsafePathError("Refresh lock must not have hard links")
         os.fchmod(descriptor, 0o600)
         return descriptor
     except BaseException:
@@ -1276,7 +1380,6 @@ def refresh_cache(
 
         codex_profiles = discover_profiles(codex_profile_root)
         claude_profiles = discover_claude_profiles(claude_profile_root, claude_profile_mode)
-        claude_bridge_errors = ensure_claude_bridges(claude_profiles)
         codex_command = resolve_codex_command()
         claude_command = resolve_claude_command()
         accounts_by_key: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1324,9 +1427,6 @@ def refresh_cache(
         accounts = [accounts_by_key[("codex", str(profile))] for profile in codex_profiles]
         for profile in claude_profiles:
             account = accounts_by_key[("claude", str(profile))]
-            bridge_error = claude_bridge_errors.get(str(profile))
-            if bridge_error and not account.get("limits") and account.get("ready"):
-                account["error"] = bridge_error
             accounts.append(account)
         global_error = ""
         if not accounts:
@@ -1442,6 +1542,15 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", dest="json_result", help="write the bounded JSON result")
     parser.add_argument("--cached", action="store_true", help="do not refresh before printing")
     parser.add_argument("--force", action="store_true", help="refresh even when another monitor just updated the cache")
+    capture_actions = parser.add_mutually_exclusive_group()
+    capture_actions.add_argument(
+        "--setup-claude-capture", action="store_true",
+        help="explicitly add the local status-line command to the selected Claude profiles",
+    )
+    capture_actions.add_argument(
+        "--remove-claude-capture", action="store_true",
+        help="remove this plugin's status-line command from the selected Claude profiles",
+    )
     parser.add_argument(
         "--show-identity",
         action="store_true",
@@ -1472,10 +1581,20 @@ def main() -> int:
         parser.error("--print and --json cannot be used together")
     if args.profiles_root and args.codex_profiles_root:
         parser.error("--profiles-root and --codex-profiles-root cannot be used together")
+    if (args.setup_claude_capture or args.remove_claude_capture) and (args.cached or args.force or args.print_result or args.show_identity):
+        parser.error("capture setup/removal supports --json and profile selection only")
     codex_value = args.codex_profiles_root or args.profiles_root
     codex_profile_root, claude_profile_root, claude_profile_mode = resolve_profile_configuration(
         codex_value, args.claude_profiles_root, args.claude_profile_mode
     )
+
+    if args.setup_claude_capture or args.remove_claude_capture:
+        try:
+            result = setup_claude_capture(claude_profile_root, claude_profile_mode, remove=args.remove_claude_capture)
+        except (OSError, ValueError) as exc:
+            result = {"ok": False, "message": safe_text(f"Claude capture action failed: {exc}")}
+        print(json.dumps(result) if args.json_result else result["message"])
+        return 0 if result["ok"] else 1
 
     try:
         payload = (

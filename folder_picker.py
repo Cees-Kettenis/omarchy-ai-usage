@@ -17,7 +17,7 @@ def choose_folder(initial_path: str) -> int:
     loop = GLib.MainLoop()
     result_code = 1
 
-    chooser = Gtk.FileDialog(title="Choose Codex profiles folder", modal=True)
+    chooser = Gtk.FileDialog(title="Choose AI profiles folder", modal=True)
 
     initial_path = os.path.abspath(os.path.expanduser(initial_path))
     if os.path.isdir(initial_path):

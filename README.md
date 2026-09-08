@@ -3,7 +3,7 @@
 See the AI usage left across your local profiles from the Omarchy bar.
 
 <p align="center">
-  <img src="preview.png" width="440" alt="AI Usage summary showing usage for four profiles">
+  <img src="preview.png" width="405" alt="AI Usage summary showing named OpenAI and Claude profiles">
 </p>
 
 Version 1.1 supports OpenAI Codex and Claude Code profiles. AI Usage checks
@@ -32,10 +32,23 @@ and does not request elevated privileges.
 
 ## Update or remove
 
+Update an installation managed through Git:
+
 ```bash
 omarchy plugin update ai-usage
+```
+
+Before uninstalling, open settings and click **Remove Claude Code usage capture**
+if you enabled capture. Wait for the result, then remove the plugin:
+
+```bash
 omarchy plugin remove ai-usage
 ```
+
+Omarchy's remove command does not clean up Claude settings. Without the capture
+removal step, Claude Code keeps a command pointing at the removed plugin.
+If you enabled capture at an older profile location, select and save that
+location to remove capture there too. See the [user guide](docs/user-guide.md).
 
 ## What you get
 
@@ -53,10 +66,11 @@ omarchy plugin remove ai-usage
 
 Claude defaults to **Single account** at `~/.claude`. To use more accounts,
 choose **Multiple accounts** and select a parent folder whose immediate
-children are separate `CLAUDE_CONFIG_DIR` homes. AI Usage configures official
-Claude usage capture automatically on the first refresh after the plugin is
-enabled and whenever it discovers a new profile. Make a request in each Claude
-Code profile to populate its usage.
+children are separate `CLAUDE_CONFIG_DIR` homes. Save your profile locations,
+then click **Enable Claude Code usage capture** in settings.
+This adds a local status-line command to the saved Claude profiles. Make a
+request in each Claude Code profile to populate its usage. Repeat setup after
+adding a profile. Routine refreshes never change Claude settings.
 
 Claude Code sends the documented five-hour and seven-day subscription windows
 to the plugin's local status-line command. The command does not use API tokens,
@@ -64,8 +78,9 @@ and the collector uses the documented `claude auth status` command to check
 which account is signed in. AI Usage does not read Claude credential contents
 or call an undocumented Anthropic endpoint.
 
-If a Claude profile already has a custom status line, automatic setup leaves it
-unchanged instead of overwriting it. Capture also displays a compact usage line
+If a Claude profile already has a custom status line, setup leaves it
+unchanged and reports that capture could not be installed for that profile.
+Capture also displays a compact usage line
 inside Claude Code. See [How it works](docs/how-it-works.md) for lifecycle
 details, status-line tradeoffs, and multi-account examples.
 
@@ -75,6 +90,7 @@ switcher and profile heading.
 
 ## Documentation
 
+- [User guide](docs/user-guide.md) walks through setup, everyday use, and removal.
 - [How it works](docs/how-it-works.md) covers profiles, caching, settings,
   controls, privacy, and command-line use.
 - [Development and releases](docs/development.md) covers local checks, release
