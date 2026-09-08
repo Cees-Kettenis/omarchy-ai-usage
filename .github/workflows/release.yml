@@ -13,9 +13,10 @@ jobs:
     name: GitHub release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate tag and extract release notes
         id: release
@@ -69,7 +70,7 @@ jobs:
 
       - name: Test collector
         run: |
-          /usr/bin/python3 -m py_compile collector.py folder_picker.py
+          /usr/bin/python3 -m py_compile collector.py claude_statusline.py folder_picker.py
           /usr/bin/python3 -m unittest discover -s tests -v
 
       - name: Build plugin archives
@@ -85,7 +86,7 @@ jobs:
           output_dir="${RUNNER_TEMP}/release"
 
           mkdir -p "${package_dir}/docs/screenshots" "${output_dir}"
-          cp Panel.qml collector.py folder_picker.py manifest.json preview.png \
+          cp Panel.qml collector.py claude_statusline.py folder_picker.py manifest.json preview.png \
             README.md CHANGELOG.md LICENSE SECURITY.md "${package_dir}/"
           cp docs/*.md "${package_dir}/docs/"
           cp docs/screenshots/*.png "${package_dir}/docs/screenshots/"

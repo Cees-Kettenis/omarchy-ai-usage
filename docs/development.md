@@ -2,18 +2,19 @@
 
 ## Local checks
 
-Run both checks before committing:
+Run these checks before committing:
 
 ```bash
 omarchy plugin validate .
-/usr/bin/python3 -m py_compile collector.py folder_picker.py
+/usr/bin/python3 -m py_compile collector.py claude_statusline.py folder_picker.py
 /usr/bin/python3 -m unittest discover -s tests -v
 ```
 
 The Omarchy validator checks the manifest, plugin ID, entry points, declared
 kinds, and repository layout. Python compilation catches syntax errors in the
-collector and folder picker. The unit tests cover the collector's path,
-permission, process, transport, and payload boundaries.
+collector, Claude status-line bridge, and folder picker. The unit tests cover
+path, permission, provider separation, process, transport, and payload
+boundaries.
 
 Saving a file through the installed plugin path reloads the plugin in the
 running Omarchy shell. If it does not reload, run:
@@ -21,6 +22,29 @@ running Omarchy shell. If it does not reload, run:
 ```bash
 omarchy-shell shell rescanPlugins
 ```
+
+If the widget still behaves like the previous version, run `omarchy restart
+shell`. Plugin rescans can reuse cached QML on builds without
+`Qt.clearComponentCache`; restarting the shell loads the updated code.
+
+## Manual release checks
+
+Use a separate test installation or back up existing settings before resetting
+it. Check the installed plugin after a shell restart so cached QML does not
+hide the current changes.
+
+- Open settings, choose a folder, and save. Repeat by cancelling the picker;
+  other unsaved settings should remain intact in both cases.
+- Check default and custom names in the summary and account tabs. Clear a
+  custom name to restore its default.
+- Save the Claude location, enable capture, and send a Claude Code message.
+  Refresh the widget and check the usage snapshot.
+- Remove capture and verify that only AI Usage's status-line command disappears
+  from the test profile. Repeat removal and check a profile with a custom
+  status line to confirm it stays unchanged.
+- Check both Claude account modes, OpenAI refresh modes, sleep, and privacy.
+
+The [user guide](user-guide.md) documents the expected user-facing behavior.
 
 ## Releases
 

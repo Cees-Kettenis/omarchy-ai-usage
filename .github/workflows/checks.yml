@@ -14,9 +14,11 @@ jobs:
     name: Collector
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
 
       - name: Compile and test
         run: |
-          /usr/bin/python3 -m py_compile collector.py folder_picker.py
+          /usr/bin/python3 -m py_compile collector.py claude_statusline.py folder_picker.py
           /usr/bin/python3 -m unittest discover -s tests -v
